@@ -1,6 +1,6 @@
 /*
  * Arquivo: style.css
- * Descrição: Estilos base, com suporte para temas e layout completo.
+ * Descrição: Estilos de layout e estrutura. As cores são controladas pelos ficheiros de tema.
  */
 
 /* -- VARIÁVEIS DE LAYOUT E TRANSIÇÕES -- */
@@ -44,7 +44,7 @@ html, body {
     /* UTILIZA AS VARIÁVEIS DO TEMA CARREGADO */
     background: var(--color-bg);
     color: var(--color-text);
-    transition: background-color var(--transition-medium), color var(--transition-medium);
+    transition: background 0.3s ease-in-out, color 0.3s ease-in-out;
 }
 
 /* --- Estilos do Body do Dashboard e Login --- */
@@ -70,14 +70,10 @@ html, body {
     border-radius: 25px;
     box-shadow: var(--shadow-lg);
     transition: box-shadow var(--transition-slow), background 0.3s;
-    /* CORREÇÃO: Usa uma variável específica para o fundo do painel */
     background: var(--dashboard-bg);
     color: var(--color-text);
     isolation: isolate;
 }
-
-/* ... (O resto do seu CSS continua igual) ... */
-
 
 .dashboard-body.menu-open {
     box-shadow: 0 15px 45px rgba(0, 0, 0, 0.3);
@@ -102,7 +98,7 @@ html, body {
 
 .dashboard-body.menu-open .top-bar,
 .dashboard-body.menu-open .search-area,
-.dashboard-body.menu-open .content-panel { /* Adicionado */
+.dashboard-body.menu-open .content-panel {
     transform: translateX(var(--sidebar-width));
 }
 
@@ -152,7 +148,7 @@ html, body {
     margin-bottom: 10px;
 }
 
-.menu-link {
+.menu-link, .profile-icon-menu {
     display: flex;
     justify-content: center;
     align-items: center;
@@ -179,13 +175,9 @@ html, body {
 .menu-link svg { width: 24px; height: 24px; transition: var(--transition-fast); }
 
 .profile-icon-menu {
-    width: 50px;
-    height: 50px;
     border-radius: 50%;
-    cursor: pointer;
     border: 2px solid #4A5568;
     overflow: hidden;
-    transition: var(--transition-medium);
 }
 
 .profile-icon-menu:hover {
@@ -219,7 +211,7 @@ html, body {
 .hamburger-menu.open span:nth-child(2) { opacity: 0; }
 .hamburger-menu.open span:nth-child(3) { transform: rotate(-45deg) translate(6px, -5px); }
 
-/* --- Conteúdo Principal e Busca (ESTILOS RESTAURADOS) --- */
+/* --- Conteúdo Principal e Busca --- */
 .top-bar-left { display: flex; align-items: center; gap: 20px; }
 .header { display: flex; align-items: center; gap: 15px; opacity: 1; transition: opacity 0.3s ease; }
 .header.hidden { opacity: 0; pointer-events: none; }
@@ -236,8 +228,8 @@ html, body {
 .search-input::placeholder { color: var(--color-text-secondary); }
 .search-wrapper.expanded .search-input { width: 60vw; max-width: 900px; padding-left: 30px; padding-right: 80px; text-align: left; background-color: var(--color-card); cursor: text; }
 .search-wrapper.expanded .search-input::placeholder { color: var(--color-text-secondary); }
-.search-bubble { position: absolute; right: 10px; width: 30px; height: 30px; background-color: var(--color-card); border-radius: 50%; display: flex; justify-content: center; align-items: center; color: var(--color-primary); opacity: 0.7; transition: var(--transition-elastic); border: none; cursor: pointer; }
-.search-wrapper.expanded .search-bubble { right: 15px; width: 40px; height: 40px; background-color: var(--color-primary); color: white; opacity: 1; transform: rotate(360deg); }
+.search-bubble { position: absolute; right: 10px; width: 30px; height: 30px; background-color: var(--color-card); border-radius: 50%; display: flex; justify-content: center; align-items: center; color: var(--accent-color); opacity: 0.7; transition: var(--transition-elastic); border: none; cursor: pointer; }
+.search-wrapper.expanded .search-bubble { right: 15px; width: 40px; height: 40px; background-color: var(--accent-color); color: white; opacity: 1; transform: rotate(360deg); }
 .search-bubble svg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 25px; height: 25px; transition: var(--transition-medium); }
 .search-term-bubble { position: absolute; left: 20px; top: 50%; transform: translateY(-50%); background-color: #3498db; color: white; padding: 8px 15px; border-radius: 20px; display: flex; align-items: center; gap: 10px; font-size: 0.9rem; z-index: 2; }
 .search-term-bubble .term-text { font-weight: 500; }
@@ -246,7 +238,7 @@ html, body {
 .search-results-container { position: absolute; top: calc(50% + 40px); left: 50%; transform: translateX(-50%); width: clamp(450px, 60vw, 800px); max-height: 40vh; overflow-y: auto; background: var(--color-card); border-radius: 12px; padding: 20px; box-shadow: var(--shadow-lg); color: var(--color-text); z-index: 5; opacity: 0; pointer-events: none; transition: var(--transition-medium); }
 .search-results-container.visible { opacity: 1; pointer-events: auto; transform: translateX(-50%) translateY(10px); }
 
-/* --- PAINÉIS DE CONTEÚDO (ESTILOS RESTAURADOS) --- */
+/* --- PAINÉIS DE CONTEÚDO --- */
 .content-panel { width: 100%; height: 100%; padding: 100px 50px 50px; overflow-y: auto; color: var(--color-text); max-width: 1024px; margin: 0 auto; transition: transform var(--transition-slow); }
 .content-panel h2 { font-size: 2rem; color: var(--color-text); margin-bottom: 30px; text-align: center; }
 .content-panel h3 { font-size: 1.5rem; color: var(--color-text); margin-top: 30px; margin-bottom: 15px; border-bottom: 2px solid var(--color-border); padding-bottom: 5px; }
@@ -328,14 +320,14 @@ html, body {
 .settings-card .submit-btn { width: 100%; background: var(--color-text); color: var(--color-card); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding: 14px; border-radius: 8px; margin-top: 10px; box-shadow: 0 4px 15px rgba(44, 62, 80, 0.2); }
 .settings-card .submit-btn:hover { opacity: 0.8; transform: translateY(-3px); box-shadow: 0 6px 20px rgba(44, 62, 80, 0.3); }
 
-/* --- Estilos da Página de Login (RESTAURADOS E CORRIGIDOS) --- */
+/* --- Estilos da Página de Login --- */
 .login-container {
     position: relative;
     display: grid;
     grid-template-columns: 1fr 1.1fr;
     width: 900px;
     min-height: 550px;
-    background-color: #ffffff; /* Fixo branco */
+    background-color: var(--color-card);
     border-radius: 15px;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
     overflow: hidden;
@@ -345,7 +337,7 @@ html, body {
     display: contents;
 }
 .login-illustration {
-    background-color: #f7f8fa;
+    background-color: var(--color-bg-light-variant);
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -367,12 +359,12 @@ html, body {
 }
 .login-illustration h1 {
     font-size: 2.8rem;
-    color: #2c3e50;
+    color: var(--color-text);
     margin-bottom: 10px;
     font-weight: 700;
 }
 .login-illustration p {
-    color: #7f8c8d;
+    color: var(--color-text-secondary);
     max-width: 250px;
     line-height: 1.5;
 }
@@ -381,11 +373,11 @@ html, body {
     flex-direction: column;
     justify-content: center;
     padding: 50px;
-    color: #333; /* Garante que o texto dentro do form seja escuro */
+    color: var(--color-text);
 }
 .login-form h3 {
     font-size: 1.5rem;
-    color: #333;
+    color: var(--color-text);
     margin-bottom: 30px;
     font-weight: 600;
     text-align: center;
@@ -405,15 +397,15 @@ html, body {
     width: 100%;
     padding: 12px 12px 12px 45px;
     border: none;
-    background-color: #ecf0f1; /* Fixo cinza claro */
+    background-color: var(--color-bg-light-variant);
     border-radius: 25px;
     font-size: 1rem;
-    color: #34495e;
+    color: var(--color-text);
     transition: all 0.3s ease;
 }
 .login-form .input-group input:focus {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(102, 166, 255, 0.5);
+    box-shadow: 0 0 0 3px rgba(128, 90, 213, 0.3);
 }
 .btn-login {
     width: 100%;
@@ -440,14 +432,14 @@ html, body {
     font-size: 0.9rem;
 }
 .login-links a {
-    color: #7f8c8d;
+    color: var(--color-text-secondary);
     text-decoration: none;
     display: block;
     margin-top: 12px;
     transition: color 0.3s ease;
 }
 .login-links a:hover {
-    color: #66a6ff;
+    color: var(--accent-color);
 }
 .flash-message.login-error {
     background-color: #f8d7da;
@@ -470,7 +462,7 @@ html, body {
     gap: 20px;
     opacity: 0;
     pointer-events: none;
-    color: #333; /* Garante que o texto de boas-vindas seja escuro */
+    color: var(--color-text);
 }
 #welcomeAvatar {
     width: 60px;
@@ -544,4 +536,5 @@ html, body {
 
 #theme-toggle-btn:hover {
     transform: scale(1.1);
-    background-color: var(--accent-color-hover)
+    background-color: var(--accent-color-hover);
+}
