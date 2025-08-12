@@ -1,6 +1,6 @@
 /*
  * Arquivo: style.css
- * Descrição: Estilos de layout e estrutura. As cores são controladas pelos ficheiros de tema.
+ * Descrição: Estilos base, com suporte para temas e layout completo.
  */
 
 /* -- VARIÁVEIS DE LAYOUT E TRANSIÇÕES -- */
@@ -41,7 +41,6 @@ html, body {
     height: 100%;
     font-family: var(--font-family);
     overflow-x: hidden;
-    /* UTILIZA AS VARIÁVEIS DO TEMA CARREGADO */
     background: var(--color-bg);
     color: var(--color-text);
     transition: background 0.3s ease-in-out, color 0.3s ease-in-out;
@@ -113,7 +112,7 @@ html, body {
     left: 0;
     width: var(--sidebar-width);
     height: 100%;
-    background: #1A202C; /* Fixo no modo escuro para contraste */
+    background: #1A202C;
     border-right: 1px solid #2D3748;
     display: flex;
     flex-direction: column;
@@ -202,7 +201,7 @@ html, body {
 .hamburger-menu span {
     width: 100%;
     height: 2px;
-    background-color: var(--color-text); /* Usa a cor do texto do tema */
+    background-color: var(--color-text);
     border-radius: 2px;
     transition: var(--transition-elastic);
 }
@@ -245,13 +244,74 @@ html, body {
 .flash-message { padding: 15px; margin-bottom: 20px; border-radius: 8px; color: white; text-align: center; font-weight: 500; }
 .flash-message.error, .flash-message.danger { background-color: var(--btn-danger-bg); }
 .flash-message.success { background-color: var(--btn-success-bg); }
-.question-form { background: var(--color-bg-light-variant); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); padding: 25px; border-radius: 12px; }
-.form-group { margin-bottom: 15px; }
-.form-group label { display: block; margin-bottom: 5px; font-weight: 600; color: var(--color-text); }
-.form-group input[type="text"], .form-group textarea, .form-group select { width: 100%; padding: 10px; border: 1px solid var(--color-border); border-radius: 6px; font-size: 1rem; background: var(--color-card); color: var(--color-text); transition: var(--transition-fast); }
-.form-group input[type="text"]:focus, .form-group textarea:focus, .form-group select:focus { border-color: var(--accent-color); box-shadow: 0 0 0 3px rgba(128, 90, 213, 0.3); outline: none; }
-.submit-btn, .primary-btn { width: auto; padding: 10px 20px; border: none; border-radius: 8px; background-color: var(--accent-color); color: white; font-size: 1rem; cursor: pointer; transition: var(--transition-medium); }
-.submit-btn:hover, .primary-btn:hover { background-color: var(--accent-color-hover); transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1); }
+
+/* --- LAYOUT DO BANCO DE QUESTÕES (MELHORADO) --- */
+.question-form {
+    background: var(--color-card);
+    padding: 30px;
+    border-radius: 16px;
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-light);
+}
+.form-group {
+    margin-bottom: 20px;
+}
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+}
+.form-group input[type="text"],
+.form-group textarea,
+.form-group select {
+    width: 100%;
+    padding: 12px 15px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    font-size: 1rem;
+    background: var(--color-bg-light-variant);
+    color: var(--color-text);
+    transition: var(--transition-fast);
+}
+.form-group input[type="text"]:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(128, 90, 213, 0.25);
+    outline: none;
+    background-color: var(--color-card);
+}
+.submit-btn, .primary-btn, .secondary-btn {
+    width: auto;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-medium);
+}
+.submit-btn:hover, .primary-btn:hover, .secondary-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+.submit-btn, .primary-btn {
+    background-color: var(--accent-color);
+    color: white;
+}
+.submit-btn:hover, .primary-btn:hover {
+    background-color: var(--accent-color-hover);
+}
+.secondary-btn {
+    background-color: var(--color-bg-light-variant);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+}
+.secondary-btn:hover {
+    background-color: var(--color-border);
+}
 .divider { border: 0; height: 1px; background: var(--color-border); margin: 40px 0; }
 .question-list { display: flex; flex-direction: column; gap: 15px; }
 .question-item { display: flex; align-items: center; gap: 15px; background: var(--color-card); padding: 15px; border-radius: 8px; transition: var(--transition-medium); border-left: 5px solid transparent; border: 1px solid var(--color-border); }
@@ -271,54 +331,85 @@ html, body {
 .selection-actions.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
 .selection-actions .action-buttons { display: flex; gap: 10px; align-items: center; }
 .selection-actions select { padding: 8px; border-radius: 6px; border: 1px solid var(--color-border); background-color: var(--color-card); color: var(--color-text); }
-.secondary-btn { padding: 10px 20px; border: 1px solid var(--accent-color); background: transparent; color: var(--accent-color); border-radius: 8px; cursor: pointer; transition: var(--transition-medium); }
-.secondary-btn:hover { background: var(--accent-color); color: white; transform: translateY(-2px); }
-.option-input-group { display: flex; align-items: center; gap: 10px; }
+.option-input-group {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
 .option-input-group input[type="text"] { flex-grow: 1; }
-.correct-answer-label { display: flex; align-items: center; gap: 5px; font-weight: normal; }
-.remove-option-btn { background: var(--btn-danger-bg); color: white; border: none; width: 30px; height: 30px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; transition: var(--transition-fast); }
-.remove-option-btn:hover { background: var(--btn-danger-hover); transform: scale(1.1); }
+.correct-answer-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: normal;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+.remove-option-btn {
+    background: var(--color-bg-light-variant);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    font-size: 1.5rem;
+    cursor: pointer;
+    transition: var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.remove-option-btn:hover {
+    background: var(--btn-danger-bg);
+    color: white;
+    border-color: var(--btn-danger-bg);
+    transform: scale(1.1);
+}
 .form-row { display: flex; gap: 20px; }
 .form-row .form-group { flex: 1; }
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); display: flex; justify-content: center; align-items: center; z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.3s ease-in-out; }
-.modal-overlay.open { opacity: 1; pointer-events: auto; }
-.modal-content { background: var(--color-card); padding: 30px; border-radius: 15px; width: 90%; max-width: 600px; position: relative; color: var(--color-text); transform: translateY(20px); transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
-.modal-overlay.open .modal-content { transform: translateY(0); }
-.modal-close-btn { position: absolute; top: 10px; right: 15px; background: none; border: none; font-size: 2rem; color: var(--color-text-secondary); cursor: pointer; }
-.modal-content h3 { margin-top: 0; margin-bottom: 5px; font-size: 1.2rem; }
-.modal-question-type, #modalTags { font-size: 0.9rem; color: var(--color-text-secondary); margin-bottom: 20px; }
-.modal-options-list { list-style: none; margin: 0; display: flex; flex-direction: column; gap: 10px; }
-.modal-options-list li { padding: 12px; border: 1px solid var(--color-border); border-radius: 8px; }
-.modal-options-list li.correct { background-color: #d4edda; border-color: #c3e6cb; color: #155724; font-weight: bold; }
-.modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--color-border); }
-.modal-delete-btn, .edit-btn { color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; transition: var(--transition-medium); }
-.modal-delete-btn { background-color: var(--btn-danger-bg); }
-.modal-delete-btn:hover { background-color: var(--btn-danger-hover); transform: translateY(-2px); }
-.edit-btn { background-color: var(--accent-color); }
-.edit-btn:hover { background-color: var(--accent-color-hover); transform: translateY(-2px); }
-#modalEditContent .form-group { margin-bottom: 15px; }
-#modalEditContent label { display: block; margin-bottom: 5px; font-weight: 600; }
-#modalEditContent textarea, #modalEditContent input[type="text"] { width: 100%; padding: 10px; border: 1px solid var(--color-border); border-radius: 6px; font-size: 1rem; background-color: var(--color-bg-light-variant); color: var(--color-text); }
-.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-.trash-link, .back-link { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; font-weight: 500; padding: 8px 16px; border-radius: 20px; transition: var(--transition-medium); border: 1px solid var(--color-border); background-color: var(--color-bg-light-variant); color: var(--color-text); }
-.trash-link:hover { background-color: var(--btn-danger-bg); color: white; border-color: var(--btn-danger-hover); }
-.back-link:hover { background-color: var(--accent-color); color: white; border-color: var(--accent-color-hover); }
-.deleted-item { opacity: 0.7; background-color: var(--color-bg-light-variant); }
-.action-buttons { display: flex; gap: 10px; }
-.restore-btn, .perm-delete-btn { color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: var(--transition-fast); }
-.restore-btn { background-color: var(--btn-success-bg); }
-.perm-delete-btn { background-color: var(--btn-danger-hover); }
-.restore-btn:hover, .perm-delete-btn:hover { opacity: 0.8; }
-.settings-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 40px; }
-.settings-card { background: var(--color-card); padding: 30px 35px; border-radius: 16px; box-shadow: var(--shadow-md); border: 1px solid var(--color-border); }
-.settings-card h3 { font-size: 1.3rem; font-weight: 600; color: var(--color-text); margin-top: 0; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 1px solid var(--color-border); }
-.settings-card .form-group label { font-size: 0.85rem; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
-.settings-card .form-group input[type="text"], .settings-card .form-group input[type="email"], .settings-card .form-group input[type="password"] { background-color: var(--color-bg-light-variant); border: 2px solid var(--color-border); border-radius: 8px; padding: 12px 15px; font-size: 1rem; color: var(--color-text); transition: all 0.2s ease-in-out; }
-.settings-card .form-group input:focus { border-color: var(--accent-color); box-shadow: none; background-color: var(--color-card); }
-.settings-card .form-group input:disabled { background-color: var(--color-border); color: var(--color-text-secondary); }
-.settings-card .form-group small { color: var(--color-text-secondary); font-size: 0.8rem; margin-top: 8px; display: block; }
-.settings-card .submit-btn { width: 100%; background: var(--color-text); color: var(--color-card); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding: 14px; border-radius: 8px; margin-top: 10px; box-shadow: 0 4px 15px rgba(44, 62, 80, 0.2); }
-.settings-card .submit-btn:hover { opacity: 0.8; transform: translateY(-3px); box-shadow: 0 6px 20px rgba(44, 62, 80, 0.3); }
+.form-buttons {
+    display: flex;
+    gap: 15px;
+    margin-top: 25px;
+}
+
+/* --- ESTILOS DO TOOLTIP --- */
+.tooltip-text {
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    margin-left: 15px;
+    padding: 6px 12px;
+    background-color: #1A202C;
+    color: #ffffff;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    white-space: nowrap;
+    z-index: 10;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(-50%) translateX(-5px);
+    transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+}
+.tooltip-text::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 100%;
+    transform: translateY(-50%);
+    border-width: 6px;
+    border-style: solid;
+    border-color: transparent #1A202C transparent transparent;
+}
+.menu-link:hover .tooltip-text,
+.profile-icon-menu:hover .tooltip-text {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(-50%) translateX(0);
+}
 
 /* --- Estilos da Página de Login --- */
 .login-container {
