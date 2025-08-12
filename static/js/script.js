@@ -160,8 +160,10 @@ document.addEventListener('DOMContentLoaded', () => {
             if (searchWrapper && !searchWrapper.contains(event.target) && searchResultsContainer && !searchResultsContainer.contains(event.target)) {
                 searchResultsContainer.style.display = 'none';
                 searchTermBubble.style.display = 'none';
-                searchInput.value = '';
-                searchInput.placeholder = 'Buscar por título, nível ou grau de ensino...';
+                if(searchInput) {
+                    searchInput.value = '';
+                    searchInput.placeholder = 'Buscar por título, nível ou grau de ensino...';
+                }
             }
         });
     };
@@ -177,7 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let optionCount = 0;
 
         const addOptionField = () => {
-            if (!optionsContainer) return;
+            if (!optionsContainer || !tipoQuestaoSelect) return;
             optionCount++;
             const questionType = tipoQuestaoSelect.value;
             const inputType = (questionType === 'ESCOLHA_UNICA') ? 'radio' : 'checkbox';
@@ -214,7 +216,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         tipoQuestaoSelect?.addEventListener('change', updateFormUI);
         addOptionBtn?.addEventListener('click', addOptionField);
-        updateFormUI(); // Inicializa o formulário
+        if (tipoQuestaoSelect) {
+            updateFormUI(); // Inicializa o formulário
+        }
     };
 
     // ===================================
@@ -230,7 +234,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const updateSelectionUI = () => {
             const count = selectedIds.size;
-            if (selectionCount) selectionCount.textContent = `${count} questão${count > 1 ? 's' : ''} selecionada${count > 1 ? 's' : ''}`;
+            if (selectionCount) selectionCount.textContent = `${count} questão${count !== 1 ? 's' : ''} selecionada${count !== 1 ? 's' : ''}`;
             if (selectionActions) {
                 if (count > 0) {
                     selectionActions.classList.add('visible');
@@ -323,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentQuestionData = await response.json();
 
                 switchToViewMode();
-                modalQuestionTitle.textContent = `#${currentQuestionData.id}: ${currentQuestionData.enunciado}`;
+                if(modalQuestionTitle) modalQuestionTitle.textContent = `#${currentQuestionData.id}: ${currentQuestionData.enunciado}`;
 
                 if (modalTags) {
                     modalTags.innerHTML = `
@@ -491,6 +495,38 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ===================================
+    // MÓDULO: TEMA (CLARO/ESCURO)
+    // ===================================
+    const setupThemeToggler = () => {
+        const themeToggleBtn = document.getElementById('theme-toggle-btn');
+        const themeLink = document.getElementById('theme-link');
+
+        if (!themeToggleBtn || !themeLink) return;
+
+        const moonIconClass = 'fa-moon';
+        const sunIconClass = 'fa-sun';
+
+        const setTheme = (theme) => {
+            const isDark = theme === 'dark';
+            const themeHref = isDark ? '/static/css/tema_escuro.css' : '/static/css/tema_claro.css';
+            const iconClass = isDark ? sunIconClass : moonIconClass;
+
+            themeLink.setAttribute('href', themeHref);
+            themeToggleBtn.innerHTML = `<i class="fas ${iconClass}"></i>`;
+            localStorage.setItem('theme', theme);
+        };
+
+        themeToggleBtn.addEventListener('click', () => {
+            const currentTheme = localStorage.getItem('theme');
+            setTheme(currentTheme === 'dark' ? 'light' : 'dark');
+        });
+
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        setTheme(savedTheme);
+    };
+
+
+    // ===================================
     // INICIALIZAÇÃO DE TODOS OS MÓDULOS
     // ===================================
     setupProfilePhotoUpload();
@@ -499,4 +535,5 @@ document.addEventListener('DOMContentLoaded', () => {
     setupQuestionForm();
     setupSelectionAndExport();
     setupQuestionModal();
+    setupThemeToggler(); // Adicionado
 });
