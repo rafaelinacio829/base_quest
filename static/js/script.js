@@ -18,7 +18,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const flashContainer = document.createElement('div');
         flashContainer.className = `flash-message ${type}`;
         flashContainer.textContent = message;
-        // Adiciona a mensagem em um local visível, por exemplo, no topo do content-panel
         const contentPanel = document.querySelector('.content-panel');
         if (contentPanel) {
             contentPanel.insertBefore(flashContainer, contentPanel.firstChild);
@@ -33,6 +32,94 @@ document.addEventListener('DOMContentLoaded', () => {
         dropdownMenu?.classList.toggle('open');
         hamburgerMenu?.classList.toggle('open');
         topBarProfile?.classList.toggle('hidden');
+    };
+
+    // ===================================
+    // MÓDULO: TEMA (CLARO/ESCURO)
+    // ===================================
+    const setupThemeToggler = () => {
+        const themeToggleBtn = document.getElementById('theme-toggle-btn');
+        const themeLink = document.getElementById('theme-link');
+
+        if (!themeToggleBtn || !themeLink) return;
+
+        const moonIconClass = 'fa-moon';
+        const sunIconClass = 'fa-sun';
+
+        const setTheme = (theme) => {
+            const isDark = theme === 'dark';
+            const themeHref = isDark ? "/static/css/tema_escuro.css" : "/static/css/tema_claro.css";
+            const iconClass = isDark ? sunIconClass : moonIconClass;
+
+            themeLink.setAttribute('href', themeHref);
+            themeToggleBtn.innerHTML = `<i class="fas ${iconClass}"></i>`;
+            document.body.classList.toggle('dark-theme', isDark);
+            document.body.classList.toggle('light-theme', !isDark);
+            localStorage.setItem('theme', theme);
+        };
+
+        themeToggleBtn.addEventListener('click', () => {
+            const currentTheme = localStorage.getItem('theme');
+            setTheme(currentTheme === 'dark' ? 'light' : 'dark');
+        });
+
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        setTheme(savedTheme);
+    };
+
+    // ===================================
+    // MÓDULO: LOGIN
+    // ===================================
+    const setupLoginForm = () => {
+        const loginForm = document.getElementById('loginForm');
+        if (!loginForm) return; // Só executa se encontrar o formulário de login
+
+        const loginContainer = document.getElementById('loginContainer');
+        const welcomeContainer = document.getElementById('welcomeContainer');
+        const welcomeAvatar = document.getElementById('welcomeAvatar');
+        const welcomeMessage = document.getElementById('welcomeMessage');
+        const errorMessage = document.getElementById('errorMessage');
+        const defaultAvatar = "/static/images/default-avatar.svg";
+
+        loginForm.addEventListener('submit', async (event) => {
+            event.preventDefault(); // Impede o envio tradicional
+            errorMessage.hidden = true;
+
+            const formData = new FormData(loginForm);
+
+            try {
+                const response = await fetch(loginForm.action, {
+                    method: 'POST',
+                    body: new URLSearchParams(formData)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    if (welcomeMessage) welcomeMessage.textContent = `Bem-vindo, ${data.user.nome_completo}!`;
+                    if (welcomeAvatar) welcomeAvatar.src = data.user.foto_perfil_url || defaultAvatar;
+                    if (loginContainer) loginContainer.classList.add('animating');
+                    if (welcomeContainer) welcomeContainer.hidden = false;
+
+                    // CORREÇÃO: Acessar a URL de redirecionamento do objeto 'data'
+                    setTimeout(() => {
+                        // A URL vem do backend no objeto 'data'
+                        window.location.href = data.redirect_url;
+                    }, 2500);
+                } else {
+                    if (errorMessage) {
+                        errorMessage.textContent = data.message;
+                        errorMessage.hidden = false;
+                    }
+                }
+            } catch (error) {
+                console.error('Erro no login:', error);
+                if (errorMessage) {
+                    errorMessage.textContent = 'Ocorreu um erro de comunicação. Tente novamente.';
+                    errorMessage.hidden = false;
+                }
+            }
+        });
     };
 
     // ===================================
@@ -160,7 +247,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (searchWrapper && !searchWrapper.contains(event.target) && searchResultsContainer && !searchResultsContainer.contains(event.target)) {
                 searchResultsContainer.style.display = 'none';
                 searchTermBubble.style.display = 'none';
-                if(searchInput) {
+                if (searchInput) {
                     searchInput.value = '';
                     searchInput.placeholder = 'Buscar por título, nível ou grau de ensino...';
                 }
@@ -244,7 +331,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
-        // Delegação de eventos para checkboxes
         questionList?.addEventListener('change', (event) => {
             const checkbox = event.target.closest('.question-checkbox');
             if (!checkbox) return;
@@ -327,7 +413,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentQuestionData = await response.json();
 
                 switchToViewMode();
-                if(modalQuestionTitle) modalQuestionTitle.textContent = `#${currentQuestionData.id}: ${currentQuestionData.enunciado}`;
+                if (modalQuestionTitle) modalQuestionTitle.textContent = `#${currentQuestionData.id}: ${currentQuestionData.enunciado}`;
 
                 if (modalTags) {
                     modalTags.innerHTML = `
@@ -438,7 +524,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
-        // Delegação de eventos para a lista de questões
         document.body.addEventListener('click', async (event) => {
             const itemContent = event.target.closest('.question-item-content');
             if (itemContent) {
@@ -480,7 +565,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Eventos do modal
         modalEditBtn?.addEventListener('click', switchToEditMode);
         modalDeleteBtn?.addEventListener('click', () => {
             if (modalDeleteBtn.dataset.id) {
@@ -495,45 +579,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ===================================
-    // MÓDULO: TEMA (CLARO/ESCURO)
-    // ===================================
-    const setupThemeToggler = () => {
-        const themeToggleBtn = document.getElementById('theme-toggle-btn');
-        const themeLink = document.getElementById('theme-link');
-
-        if (!themeToggleBtn || !themeLink) return;
-
-        const moonIconClass = 'fa-moon';
-        const sunIconClass = 'fa-sun';
-
-        const setTheme = (theme) => {
-            const isDark = theme === 'dark';
-            const themeHref = isDark ? '/static/css/tema_escuro.css' : '/static/css/tema_claro.css';
-            const iconClass = isDark ? sunIconClass : moonIconClass;
-
-            themeLink.setAttribute('href', themeHref);
-            themeToggleBtn.innerHTML = `<i class="fas ${iconClass}"></i>`;
-            localStorage.setItem('theme', theme);
-        };
-
-        themeToggleBtn.addEventListener('click', () => {
-            const currentTheme = localStorage.getItem('theme');
-            setTheme(currentTheme === 'dark' ? 'light' : 'dark');
-        });
-
-        const savedTheme = localStorage.getItem('theme') || 'light';
-        setTheme(savedTheme);
-    };
-
-
-    // ===================================
     // INICIALIZAÇÃO DE TODOS OS MÓDULOS
     // ===================================
+    setupThemeToggler();
+    setupLoginForm();
     setupProfilePhotoUpload();
     setupMenu();
     setupInteractiveSearch();
     setupQuestionForm();
     setupSelectionAndExport();
     setupQuestionModal();
-    setupThemeToggler(); // Adicionado
 });

@@ -1,7 +1,13 @@
+
 :root {
-    --cor-fundo: #18191a;
-    --cor-texto: #e4e6eb;
-    --cor-primaria: #2d88ff;
-    --cor-fundo-cabecalho: #242526;
-    --cor-borda: #3a3b3c;
+    --color-bg: #2d3436; /* Fundo principal da página (cinza escuro) */
+    --color-card: #3b4446; /* Fundo dos painéis e cartões (cinza um pouco mais claro) */
+    --color-card-transparent: rgba(45, 52, 54, 0.7); /* Fundo da barra superior */
+    --color-text: #f5f6fa; /* Cor principal do texto (branco) */
+    --color-text-secondary: #b2bec3; /* Cor do texto secundário (cinza claro) */
+    --color-border: #4a5558; /* Cor das bordas e divisórias */
+    --color-bg-light-variant: #4a5558; /* Cor de fundo para inputs e outros elementos */
+    --color-primary: #a29bfe; /* Roxo claro para botões e links ativos */
+    --color-primary-variant: #8a7ffb; /* Variação mais clara do roxo para hover */
+    --color-white: #ffffff;
 }

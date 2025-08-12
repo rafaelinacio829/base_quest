@@ -1,7 +1,22 @@
+
 :root {
-    --cor-fundo: #f0f2f5;
-    --cor-texto: #1c1e21;
-    --cor-primaria: #1877f2;
-    --cor-fundo-cabecalho: #ffffff;
-    --cor-borda: #dcdfe6;
+    --color-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
+    /* Fundo dos painéis, cartões e modais (branco) */
+    --color-card: #ffffff;
+
+    /* Fundo da barra superior com transparência */
+    --color-card-transparent: rgba(255, 255, 255, 0.7);
+
+    /* Cor principal do texto (azul escuro/cinza) */
+    --color-text: #2c3e50;
+
+    /* Cor do texto secundário (cinza) */
+    --color-text-secondary: #7f8c8d;
+
+    /* Cor das bordas e divisórias */
+    --color-border: #e0e0e0;
+
+    /* Cor de fundo para inputs e outros elementos de destaque */
+    --color-bg-light-variant: #e9ecef;
 }

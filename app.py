@@ -87,7 +87,6 @@ def search_questoes():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=DictCursor)
-        # CORREÇÃO: Adicionado '::text' para converter a coluna ENUM antes de usar ILIKE
         sql_search = """
                      SELECT id, enunciado, tipo_questao, nivel_dificuldade, grau_ensino
                      FROM questoes
@@ -128,7 +127,6 @@ def questoes():
         sql_query = "SELECT id, enunciado, tipo_questao, nivel_dificuldade, grau_ensino FROM questoes WHERE is_active = TRUE"
         params = []
         if search_query:
-            # CORREÇÃO: Adicionado '::text' para converter a coluna ENUM antes de usar ILIKE
             sql_query += " AND (enunciado ILIKE %s OR nivel_dificuldade::text ILIKE %s OR grau_ensino ILIKE %s)"
             like_term = f"%{search_query}%"
             params.extend([like_term, like_term, like_term])
@@ -376,7 +374,6 @@ def edit_questao(questao_id):
         flash("Enunciado e Nível de Dificuldade são obrigatórios.", "error")
         return redirect(url_for('questoes'))
 
-    # CORREÇÃO: Mapeia o valor do formulário (ex: "FACIL") para o valor esperado pelo ENUM (ex: "Fácil")
     dificuldade_map = {
         'FACIL': 'Fácil',
         'MEDIO': 'Médio',
@@ -433,7 +430,6 @@ def add_questao():
         flash("Todos os campos principais são obrigatórios.", "error")
         return redirect(url_for('questoes'))
 
-    # CORREÇÃO: Mapeia o valor do formulário (ex: "FACIL") para o valor esperado pelo ENUM (ex: "Fácil")
     dificuldade_map = {
         'FACIL': 'Fácil',
         'MEDIO': 'Médio',
@@ -535,7 +531,9 @@ def login():
                     'user': {
                         'nome_completo': f"{user['nome']} {user['sobrenome']}".strip(),
                         'foto_perfil_url': foto_perfil_url
-                    }
+                    },
+                    # CORREÇÃO: Adicionando a URL de redirecionamento que faltava
+                    'redirect_url': url_for('painel')
                 })
             else:
                 return jsonify({'success': False, 'message': 'Email ou senha inválidos.'}), 401
@@ -545,7 +543,7 @@ def login():
             return jsonify({'success': False, 'message': 'Erro ao conectar com o banco de dados.'}), 500
         finally:
             if conn:
-                if cursor:
+                if 'cursor' in locals() and cursor:
                     cursor.close()
                 conn.close()
 
