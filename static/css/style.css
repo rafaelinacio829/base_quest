@@ -629,3 +629,119 @@ html, body {
     transform: scale(1.1);
     background-color: var(--accent-color-hover);
 }
+/* Adicione esta regra ao seu style.css para alinhar ícones em botões */
+button .fas,
+button .far,
+button .fal,
+button .fad {
+    margin-right: 8px; /* Adiciona um espaço entre o ícone e o texto */
+}
+
+/* Garante que os botões com ícones alinhem o conteúdo centralmente */
+.delete-btn, .perm-delete-btn, .btn-excluir {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+/* =============================== */
+/* ESTILOS DO MODAL DE QUESTÕES    */
+/* =============================== */
+
+/* Fundo escurecido do modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+/* Animação para exibir o modal */
+.modal-overlay.open {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Conteúdo do modal */
+.modal-content {
+    background-color: var(--background-color, #fff);
+    color: var(--text-color, #333);
+    padding: 25px;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 600px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    transform: translateY(-20px);
+    transition: transform 0.3s ease;
+    position: relative; /* Para o botão de fechar */
+}
+
+.modal-overlay.open .modal-content {
+    transform: translateY(0);
+}
+
+/* Botão de fechar (X) */
+.modal-close-btn {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    background: none;
+    border: none;
+    font-size: 28px;
+    color: var(--text-color-secondary, #888);
+    cursor: pointer;
+    line-height: 1;
+}
+
+.modal-close-btn:hover {
+    color: var(--text-color, #333);
+}
+
+/* Título e Tags */
+#modalQuestionTitle {
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 1.4em;
+}
+
+#modalTags .tag {
+    margin-bottom: 15px;
+}
+
+/* Lista de opções */
+.modal-options-list {
+    list-style: none;
+    padding: 0;
+    margin-top: 20px;
+}
+
+.modal-options-list li {
+    background-color: var(--background-alt, #f9f9f9);
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 8px;
+    border-left: 4px solid var(--text-color-secondary, #ccc);
+}
+
+.modal-options-list li.correct {
+    border-left-color: #28a745;
+    font-weight: bold;
+}
+
+/* Rodapé do modal */
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 25px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color, #eee);
+}

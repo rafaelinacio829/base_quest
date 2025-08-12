@@ -101,9 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (loginContainer) loginContainer.classList.add('animating');
                     if (welcomeContainer) welcomeContainer.hidden = false;
 
-                    // CORREÇÃO: Acessar a URL de redirecionamento do objeto 'data'
                     setTimeout(() => {
-                        // A URL vem do backend no objeto 'data'
                         window.location.href = data.redirect_url;
                     }, 2500);
                 } else {
@@ -409,7 +407,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const openModal = async (questionId) => {
             try {
                 const response = await fetch(`/get_questao/${questionId}`);
-                if (!response.ok) throw new Error('Falha ao buscar detalhes.');
+                if (!response.ok) throw new Error('Falha ao buscar detalhes da questão.');
                 currentQuestionData = await response.json();
 
                 switchToViewMode();
@@ -524,22 +522,34 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
 
+        // =================================================================
+        // == CORREÇÃO APLICADA AQUI ==
+        // O listener de clique foi refatorado para ser mais claro e correto.
+        // =================================================================
         document.body.addEventListener('click', async (event) => {
-            const itemContent = event.target.closest('.question-item-content');
-            if (itemContent) {
-                const questionItem = itemContent.closest('.question-item');
-                if (questionItem && questionItem.dataset.id && !event.target.closest('.selection-checkbox')) {
-                    openModal(questionItem.dataset.id);
+            const target = event.target;
+
+            // --- Lógica para abrir o modal da questão ---
+            const questionItem = target.closest('.question-item');
+            if (questionItem) {
+                // Abre o modal apenas se o clique NÃO foi em um elemento interativo
+                const isInteractive = target.closest('.question-checkbox, .selection-checkbox, .delete-btn, .restore-btn, .perm-delete-btn, a');
+                if (!isInteractive) {
+                    const questionId = questionItem.dataset.id;
+                    if (questionId) {
+                        openModal(questionId);
+                    }
                 }
             }
 
-            const deleteBtn = event.target.closest('.delete-btn:not(.modal-delete-btn)');
+            // --- Lógica para os botões de ação ---
+            const deleteBtn = target.closest('.delete-btn:not(.modal-delete-btn)');
             if (deleteBtn) {
                 event.stopPropagation();
                 handleDeleteQuestion(deleteBtn.dataset.id);
             }
 
-            const restoreBtn = event.target.closest('.restore-btn');
+            const restoreBtn = target.closest('.restore-btn');
             if (restoreBtn) {
                 try {
                     const response = await fetch(`/restore_questao/${restoreBtn.dataset.id}`, { method: 'POST' });
@@ -551,7 +561,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            const permDeleteBtn = event.target.closest('.perm-delete-btn');
+            const permDeleteBtn = target.closest('.perm-delete-btn');
             if (permDeleteBtn) {
                 if (!confirm(`EXCLUSÃO PERMANENTE: Tem certeza que deseja apagar a questão #${permDeleteBtn.dataset.id} para sempre?`)) return;
                 try {
