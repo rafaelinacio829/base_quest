@@ -172,7 +172,13 @@
                         </div>
                         <div class="form-group">
                             <label for="grau_ensino">Grau de Ensino</label>
-                            <input type="text" name="grau_ensino" id="grau_ensino" placeholder="Ex: Ensino Médio, 3º Ano">
+                            <select name="grau_ensino" id="grau_ensino">
+                                <option value="">Selecione o Grau</option>
+                                <option value="Ensino Fundamental I">Ensino Fundamental I</option>
+                                <option value="Ensino Fundamental II">Ensino Fundamental II</option>
+                                <option value="Ensino Médio">Ensino Médio</option>
+                                <option value="Ensino Superior">Ensino Superior</option>
+                            </select>
                         </div>
                     </div>
 
@@ -299,8 +305,7 @@
     </div>
 
     <div class="theme-toggler">
-        <button id="theme-toggle-btn">
-            </button>
+        <button id="theme-toggle-btn"></button>
     </div>
 
     <script src="{{ url_for('static', filename='js/script.js') }}" defer></script>
