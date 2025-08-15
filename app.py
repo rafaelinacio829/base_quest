@@ -817,14 +817,12 @@ def export_questoes():
             pdf.set_font("Arial", size=12)
             for q_idx, q in enumerate(questoes_lista):
                 pdf.set_font("Arial", 'B', 14)
-                # ATUALIZAÇÃO: Remove o ID da questão
                 pdf.multi_cell(0, 10,
                                f"{q_idx + 1}. {q['enunciado']}".encode('latin-1', 'replace').decode('latin-1'))
                 pdf.set_font("Arial", size=12)
                 if q['opcoes']:
                     pdf.ln(5)
                     for i, op in enumerate(q['opcoes']):
-                        # ATUALIZAÇÃO: Remove a indicação de resposta correta
                         text = f"   {chr(97 + i)}) {op['texto']}"
                         pdf.multi_cell(0, 8, text.encode('latin-1', 'replace').decode('latin-1'))
                 pdf.ln(10)
@@ -839,8 +837,8 @@ def export_questoes():
                 p_enunciado.add_run(q['enunciado'])
                 if q['opcoes']:
                     for i, op in enumerate(q['opcoes']):
-                        correta = " (Correta)" if op['is_correta'] else ""
-                        document.add_paragraph(f"   {chr(97 + i)}) {op['texto']}{correta}", style='List Bullet')
+                        text = f"   {chr(97 + i)}) {op['texto']}"
+                        document.add_paragraph(text)
                 document.add_paragraph()
             file_stream = io.BytesIO()
             document.save(file_stream)
