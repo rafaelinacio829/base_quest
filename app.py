@@ -15,12 +15,28 @@ from fpdf import FPDF
 from docx import Document
 from docx.shared import Pt
 
+# NOVA IMPORTAÇÃO PARA O GEMINI
+import google.generativeai as genai
+
 load_dotenv()
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.secret_key = os.environ.get('SECRET_KEY')
 bcrypt = Bcrypt(app)
+
+# --- CONFIGURAÇÃO DA API GEMINI ---
+# Substitua 'YOUR_GEMINI_API_KEY' pela sua chave de API
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY"))
+
+# Configuração do modelo generativo
+generation_config = {
+    "temperature": 0.7,
+    "top_p": 1,
+    "top_k": 1,
+    "max_output_tokens": 2048,
+}
+model = genai.GenerativeModel(model_name="gemini-pro", generation_config=generation_config)
 
 
 def get_db_connection():
@@ -90,7 +106,7 @@ def search_questoes():
         sql_search = """
                      SELECT id, enunciado, tipo_questao, nivel_dificuldade, grau_ensino
                      FROM questoes
-                     WHERE is_active = TRUE 
+                     WHERE is_active = TRUE
                        AND (enunciado ILIKE %s OR nivel_dificuldade::text ILIKE %s OR grau_ensino ILIKE %s)
                      ORDER BY id DESC LIMIT 10
                      """
@@ -141,7 +157,8 @@ def banco_questoes():
             cursor.close()
             conn.close()
 
-    return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url, view='banco_questoes',
+    return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url,
+                           view='banco_questoes',
                            questoes=lista_questoes, search_query=search_query)
 
 
@@ -166,7 +183,82 @@ def cadastrar_questoes():
         if conn:
             cursor.close()
             conn.close()
-    return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url, view='cadastrar_questoes')
+    return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url,
+                           view='cadastrar_questoes')
+
+
+@app.route('/generate_questao', methods=['POST'])
+def generate_questao():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Não autenticado'}), 401
+
+    data = request.get_json()
+    tipo = data.get('tipo', 'ESCOLHA_UNICA')
+    nivel = data.get('nivel', 'Fácil')
+    grau = data.get('grau', 'Ensino Fundamental')
+
+    prompt = (f"Gere uma questão de {tipo.replace('_', ' ').lower()} "
+              f"com dificuldade {nivel.lower()} para o {grau.lower()}. "
+              "O enunciado deve ser claro. Para questões de escolha única ou múltipla, "
+              "gere 4 opções, e uma ou mais delas deve ser a correta. "
+              "Formate a resposta como um JSON válido com as seguintes chaves: "
+              "'enunciado', 'tipo', 'nivel', 'grau', 'opcoes'. "
+              "A chave 'opcoes' deve ser uma lista de objetos, cada um com as chaves 'texto' e 'is_correta' (booleano). "
+              "O JSON deve estar completo e não pode conter comentários ou texto extra.")
+
+    try:
+        response = model.generate_content(prompt)
+        response_text = response.text.strip('` \n')
+        if response_text.startswith('json'):
+            response_text = response_text[4:]
+
+        questao_gerada = json.loads(response_text)
+        return jsonify(questao_gerada)
+    except Exception as e:
+        print(f"Erro ao gerar questão com Gemini: {e}")
+        return jsonify({'error': 'Falha ao gerar questão com a IA.'}), 500
+
+
+@app.route('/api/chat', methods=['POST'])
+def chat_ia():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Não autenticado'}), 401
+
+    data = request.get_json()
+    user_message = data.get('message')
+    conversation_history = data.get('history', [])
+
+    if not user_message:
+        return jsonify({'error': 'Mensagem em branco'}), 400
+
+    # Adiciona a mensagem do usuário ao histórico
+    full_prompt = "Você é uma IA generativa para a base de questões de uma escola. Seu principal objetivo é ajudar professores a criar e gerenciar o banco de dados de questões. Você pode responder a perguntas gerais, mas sua funcionalidade principal é criar questões. Quando um usuário pedir para criar uma questão, responda APENAS com um JSON válido contendo a questão. Para todos os outros pedidos, converse de forma útil e amigável.\n\n"
+
+    # Adiciona o histórico da conversa ao prompt
+    for role, text in conversation_history:
+        full_prompt += f"{role}: {text}\n"
+
+    # Adiciona a nova mensagem do usuário
+    full_prompt += f"Usuário: {user_message}\n"
+    full_prompt += "IA: "  # Para que a IA saiba que é a vez dela de responder
+
+    try:
+        response = model.generate_content(full_prompt)
+        ai_response_text = response.text
+
+        # Tenta parsear a resposta como JSON para ver se é uma questão
+        try:
+            questao_gerada = json.loads(ai_response_text)
+            # Se for um JSON de questão válido, retorna-o
+            if all(key in questao_gerada for key in ['enunciado', 'tipo', 'nivel', 'grau']):
+                return jsonify({'type': 'question', 'data': questao_gerada})
+        except json.JSONDecodeError:
+            # Se não for JSON, trata como uma resposta de chat normal
+            return jsonify({'type': 'chat', 'message': ai_response_text})
+
+    except Exception as e:
+        print(f"Erro na API do Gemini: {e}")
+        return jsonify({'type': 'chat', 'message': 'Desculpe, ocorreu um erro ao processar sua solicitação.'}), 500
 
 
 @app.route('/lixeira')
@@ -396,7 +488,7 @@ def edit_questao(questao_id):
     grau_ensino = request.form.get('grau_ensino')
     if not all([enunciado, nivel_dificuldade_form]):
         flash("Enunciado e Nível de Dificuldade são obrigatórios.", "error")
-        return redirect(url_for('banco_questoes')) # Redireciona para o banco de questoes
+        return redirect(url_for('banco_questoes'))
 
     dificuldade_map = {
         'FACIL': 'Fácil',
@@ -414,7 +506,7 @@ def edit_questao(questao_id):
         result = cursor.fetchone()
         if not result or result['autor_id'] != user_id:
             flash("Você não tem permissão para editar esta questão.", "error")
-            return redirect(url_for('banco_questoes')) # Redireciona para o banco de questoes
+            return redirect(url_for('banco_questoes'))
 
         tipo_questao = result['tipo_questao']
         sql_update = "UPDATE questoes SET enunciado = %s, nivel_dificuldade = %s, grau_ensino = %s WHERE id = %s"
@@ -439,7 +531,7 @@ def edit_questao(questao_id):
         if conn:
             cursor.close()
             conn.close()
-    return redirect(url_for('banco_questoes')) # Redireciona para o banco de questoes
+    return redirect(url_for('banco_questoes'))
 
 
 @app.route('/add_questao', methods=['POST'])
@@ -467,9 +559,9 @@ def add_questao():
         conn = get_db_connection()
         cursor = conn.cursor()
         sql_questao = """
-            INSERT INTO questoes (enunciado, tipo_questao, autor_id, nivel_dificuldade, grau_ensino) 
-            VALUES (%s, %s, %s, %s, %s) RETURNING id
-        """
+                      INSERT INTO questoes (enunciado, tipo_questao, autor_id, nivel_dificuldade, grau_ensino)
+                      VALUES (%s, %s, %s, %s, %s) RETURNING id \
+                      """
         cursor.execute(sql_questao, (enunciado, tipo_questao, autor_id, nivel_dificuldade_db, grau_ensino))
 
         questao_id = cursor.fetchone()[0]
@@ -489,12 +581,12 @@ def add_questao():
         if conn: conn.rollback()
         flash(f"Erro ao cadastrar a questão: {e}", "error")
         print(f"Erro em /add_questao: {e}")
-        return redirect(url_for('cadastrar_questoes')) # Redireciona para o formulário de cadastro em caso de erro
+        return redirect(url_for('cadastrar_questoes'))
     finally:
         if conn:
             cursor.close()
             conn.close()
-    return redirect(url_for('banco_questoes')) # Redireciona para o banco de questoes
+    return redirect(url_for('banco_questoes'))
 
 
 @app.route('/upload_foto', methods=['POST'])
@@ -557,7 +649,6 @@ def login():
                         'nome_completo': f"{user['nome']} {user['sobrenome']}".strip(),
                         'foto_perfil_url': foto_perfil_url
                     },
-                    # CORREÇÃO: Adicionando a URL de redirecionamento que faltava
                     'redirect_url': url_for('painel')
                 })
             else:

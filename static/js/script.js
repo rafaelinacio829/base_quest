@@ -141,15 +141,28 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===================================
     const setupInteractiveSearch = () => {
         const searchWrapper = document.getElementById('searchWrapper'), searchInput = document.getElementById('searchInput'), searchBtn = document.getElementById('searchBtn'), searchTermBubble = document.getElementById('searchTermBubble'), searchResultsContainer = document.getElementById('searchResultsContainer'), searchResultsList = document.getElementById('searchResultsList');
+
+        // Adiciona a classe 'expanded' ao clicar na caixa de busca, se ainda não estiver expandida
+        searchWrapper?.addEventListener('click', (event) => {
+            if (!searchWrapper.classList.contains('expanded')) {
+                searchWrapper.classList.add('expanded');
+                searchInput?.focus();
+            }
+        });
+
         const performSearch = async () => {
             if (!searchInput || !searchResultsContainer || !searchResultsList) return;
             const query = searchInput.value.trim();
-            if (query.length < 2) { searchResultsContainer.style.display = 'none'; searchTermBubble.style.display = 'none'; return; }
+            if (query.length < 2) {
+                searchResultsContainer.style.display = 'none';
+                searchTermBubble.style.display = 'none';
+                return;
+            }
             try {
                 const response = await fetch(`/search_questoes?q=${encodeURIComponent(query)}`);
                 if (!response.ok) throw new Error('Erro na busca.');
                 const results = await response.json();
-                searchTermBubble.innerHTML = `<span class="term-text">Busca: "${query}"</span><a href="/questoes?q=${encodeURIComponent(query)}" class="view-all-link">Ver todos &rarr;</a>`;
+                searchTermBubble.innerHTML = `<span class="term-text">Busca: "${query}"</span><a href="/banco_questoes?q=${encodeURIComponent(query)}" class="view-all-link">Ver todos &rarr;</a>`;
                 searchTermBubble.style.display = 'flex';
                 searchInput.placeholder = '';
                 searchResultsList.innerHTML = '';
@@ -169,10 +182,12 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         searchBtn?.addEventListener('click', performSearch);
         searchInput?.addEventListener('keyup', (event) => { if (event.key === 'Enter') performSearch(); });
+
         document.addEventListener('click', (event) => {
             if (searchWrapper && !searchWrapper.contains(event.target) && searchResultsContainer && !searchResultsContainer.contains(event.target)) {
                 searchResultsContainer.style.display = 'none';
                 searchTermBubble.style.display = 'none';
+                searchWrapper.classList.remove('expanded'); // Remove a classe 'expanded'
                 if (searchInput) { searchInput.value = ''; searchInput.placeholder = 'Buscar por título, nível ou grau de ensino...'; }
             }
         });
@@ -182,15 +197,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // MÓDULO: FORMULÁRIO DINÂMICO
     // ===================================
     const setupQuestionForm = () => {
-        const tipoQuestaoSelect = document.getElementById('tipo_questao'), optionsContainer = document.getElementById('optionsContainer'), addOptionBtn = document.getElementById('addOptionBtn'), addOptionWrapper = document.getElementById('addOptionWrapper');
+        const tipoQuestaoSelect = document.getElementById('tipo_questao'), optionsContainer = document.getElementById('optionsContainer'), addOptionBtn = document.getElementById('addOptionBtn'), addOptionWrapper = document.getElementById('addOptionWrapper'), generateWithAIBtn = document.getElementById('generateWithAIBtn'), enunciadoInput = document.getElementById('enunciado'), nivelDificuldadeSelect = document.getElementById('nivel_dificuldade'), grauEnsinoSelect = document.getElementById('grau_ensino');
         let optionCount = 0;
-        const addOptionField = () => {
+        const addOptionField = (text = '', isCorrect = false) => {
             if (!optionsContainer || !tipoQuestaoSelect) return;
             optionCount++;
             const inputType = (tipoQuestaoSelect.value === 'ESCOLHA_UNICA') ? 'radio' : 'checkbox';
             const newOption = document.createElement('div');
             newOption.className = 'form-group dynamic-option';
-            newOption.innerHTML = `<label for="opcao_texto_${optionCount}">Opção ${String.fromCharCode(64 + optionCount)}</label><div class="option-input-group"><input type="text" name="opcoes_texto[]" id="opcao_texto_${optionCount}" placeholder="Texto da opção" required><label class="correct-answer-label"><input type="${inputType}" name="respostas_corretas[]" value="${optionCount - 1}"><span>Correta?</span></label><button type="button" class="remove-option-btn">&times;</button></div>`;
+            newOption.innerHTML = `<label for="opcao_texto_${optionCount}">Opção ${String.fromCharCode(64 + optionCount)}</label><div class="option-input-group"><input type="text" name="opcoes_texto[]" id="opcao_texto_${optionCount}" placeholder="Texto da opção" value="${text}" required><label class="correct-answer-label"><input type="${inputType}" name="respostas_corretas[]" value="${optionCount - 1}" ${isCorrect ? 'checked' : ''}><span>Correta?</span></label><button type="button" class="remove-option-btn">&times;</button></div>`;
             optionsContainer.appendChild(newOption);
             newOption.querySelector('.remove-option-btn')?.addEventListener('click', () => newOption.remove());
         };
@@ -200,8 +215,51 @@ document.addEventListener('DOMContentLoaded', () => {
             if (tipoQuestaoSelect.value === 'DISCURSIVA') { if (addOptionWrapper) addOptionWrapper.style.display = 'none'; }
             else { if (addOptionWrapper) addOptionWrapper.style.display = 'block'; addOptionField(); addOptionField(); }
         };
+
+        const handleGenerateWithAI = async () => {
+            const tipo = tipoQuestaoSelect.value;
+            const nivel = nivelDificuldadeSelect.value;
+            const grau = grauEnsinoSelect.value;
+
+            try {
+                // Remove opções existentes e reseta o formulário
+                updateFormUI();
+                enunciadoInput.value = '';
+
+                showFlashMessage('Gerando questão com IA...', 'info');
+
+                const response = await fetch('/generate_questao', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tipo, nivel, grau }),
+                });
+
+                if (!response.ok) {
+                    throw new Error((await response.json()).error || 'Falha na comunicação com a IA.');
+                }
+
+                const data = await response.json();
+
+                // Preenche o formulário com a resposta da IA
+                enunciadoInput.value = data.enunciado;
+
+                if (data.opcoes && data.opcoes.length > 0) {
+                    optionsContainer.innerHTML = '';
+                    optionCount = 0;
+                    data.opcoes.forEach(op => addOptionField(op.texto, op.is_correta));
+                }
+
+                showFlashMessage('Questão gerada com sucesso! Revise e salve.', 'success');
+
+            } catch (error) {
+                console.error("Erro ao gerar questão com IA:", error);
+                showFlashMessage(`Erro ao gerar questão: ${error.message}`, 'error');
+            }
+        };
+
         tipoQuestaoSelect?.addEventListener('change', updateFormUI);
         addOptionBtn?.addEventListener('click', addOptionField);
+        generateWithAIBtn?.addEventListener('click', handleGenerateWithAI);
         if (tipoQuestaoSelect) updateFormUI();
     };
 
@@ -344,7 +402,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!confirm(`EXCLUSÃO PERMANENTE: Deseja apagar a questão #${permDeleteBtn.dataset.id} para sempre?`)) return;
                 try {
                     const response = await fetch(`/delete_permanently/${permDeleteBtn.dataset.id}`, { method: 'POST' });
-                    if (!response.ok) throw new Error((await response.json()).error || 'Falha ao excluir.');
+                    if (!response.ok) throw new Error((await response.json()).error || 'Falha ao excluir permanentemente.');
                     location.reload();
                 } catch (error) { showFlashMessage(error.message, 'error'); }
             }
@@ -354,7 +412,7 @@ document.addEventListener('DOMContentLoaded', () => {
         modalGoToQuestionBtn?.addEventListener('click', () => {
             const questionId = modalGoToQuestionBtn.dataset.id;
             if (questionId) {
-                window.location.href = `/questoes#questao-${questionId}`;
+                window.location.href = `/banco_questoes#questao-${questionId}`;
             }
         });
 

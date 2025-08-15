@@ -9,7 +9,7 @@
     --transition-fast: 0.2s ease-in-out;
     --transition-medium: 0.3s ease-in-out;
     --transition-slow: 0.7s cubic-bezier(0.83, 0, 0.17, 1);
-    --transition-elastic: 0.6s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+    --transition-elastic: 0.6s cubic-in-out;
 
     /* Cores de Acento (usadas em ambos os temas) */
     --accent-color: #805AD5;
@@ -226,9 +226,9 @@ html, body {
 
 .search-area { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; position: relative; transition: transform var(--transition-slow); }
 .search-wrapper { position: relative; display: flex; align-items: center; cursor: pointer; z-index: 1; }
-.search-input { width: 450px; padding: 15px 60px 15px 25px; font-size: 1rem; border: none; border-radius: 50px; background-color: var(--color-bg-light-variant); color: var(--color-text); outline: none; text-align: center; transition: var(--transition-elastic); }
+.search-input { width: 600px; padding: 15px 60px 15px 25px; font-size: 1rem; border: none; border-radius: 50px; background-color: var(--color-bg-light-variant); color: var(--color-text); outline: none; text-align: center; transition: var(--transition-elastic); }
 .search-input::placeholder { color: var(--color-text-secondary); }
-.search-wrapper.expanded .search-input { width: 60vw; max-width: 900px; padding-left: 30px; padding-right: 80px; text-align: left; background-color: var(--color-card); cursor: text; }
+.search-wrapper.expanded .search-input { width: 800px; max-width: 900px; padding-left: 30px; padding-right: 80px; text-align: left; background-color: var(--color-card); color: var(--color-text); cursor: text; }
 .search-wrapper.expanded .search-input::placeholder { color: var(--color-text-secondary); }
 .search-bubble { position: absolute; right: 10px; width: 30px; height: 30px; background-color: var(--color-card); border-radius: 50%; display: flex; justify-content: center; align-items: center; color: var(--accent-color); opacity: 0.7; transition: var(--transition-elastic); border: none; cursor: pointer; }
 .search-wrapper.expanded .search-bubble { right: 15px; width: 40px; height: 40px; background-color: var(--accent-color); color: white; opacity: 1; transform: rotate(360deg); }
@@ -342,7 +342,7 @@ html, body {
 .question-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .tag { font-size: 0.75rem; padding: 3px 10px; border-radius: 12px; font-weight: 600; text-transform: capitalize; }
 .tag-facil { background-color: #d4edda; color: #155724; }
-.tag-medio { background-color: #fff3cd; color: #856404; }
+.tag-mediana { background-color: #fff3cd; color: #856404; }
 .tag-dificil { background-color: #f8d7da; color: #721c24; }
 .tag-grau { background-color: #e2e3e5; color: #383d41; }
 .selection-actions { display: flex; justify-content: space-between; align-items: center; padding: 15px; background-color: var(--color-bg-light-variant); border-radius: 8px; margin-bottom: 20px; opacity: 0; transform: translateY(-20px); transition: all 0.3s ease-in-out; pointer-events: none; }
@@ -735,23 +735,3 @@ html, body {
     border-left-color: var(--btn-success-bg);
     font-weight: 600;
 }
-
-/* --- Rodapé e botões do Modal (CORRIGIDO) --- */
-<div class="modal-footer">
-    <div id="defaultFooterButtons">
-        <button class="edit-btn" id="modalEditBtn">
-            <i class="fas fa-edit"></i> Editar
-        </button>
-        <button class="delete-btn modal-delete-btn" id="modalDeleteBtn">
-            <i class="fas fa-trash-alt"></i> Excluir
-        </button>
-    </div>
-    <div id="searchFooterButtons" style="display: none;">
-        <button class="secondary-btn" id="modalCancelBtn">
-            <i class="fas fa-times"></i> Cancelar
-        </button>
-        <button class="primary-btn" id="modalGoToQuestionBtn">
-            <i class="fas fa-arrow-right"></i> Ir para Questão
-        </button>
-    </div>
-</div>
