@@ -95,7 +95,8 @@ def insert_question_in_db(question_data):
         nivel_dificuldade_db = dificuldade_map.get(nivel_dificuldade_ia, 'Médio')
 
         sql_questao = """
-                      INSERT INTO questoes (enunciado, tipo_questao, autor_id, nivel_dificuldade, grau_ensino, area_conhecimento)
+                      INSERT INTO questoes (enunciado, tipo_questao, autor_id, nivel_dificuldade, grau_ensino, \
+                                            area_conhecimento)
                       VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
                       """
         cursor.execute(sql_questao, (
@@ -104,7 +105,7 @@ def insert_question_in_db(question_data):
             session['user_id'],
             nivel_dificuldade_db,
             question_data.get('grau_ensino'),
-            question_data.get('area_conhecimento')  # Salva o novo campo
+            question_data.get('area_conhecimento')
         ))
         questao_id = cursor.fetchone()[0]
 
@@ -114,11 +115,13 @@ def insert_question_in_db(question_data):
                 cursor.execute(sql_opcao, (questao_id, opcao.get('texto_opcao'), bool(opcao.get('is_correta'))))
 
         conn.commit()
-        return True
+        # ATUALIZAÇÃO 1: Retorna o ID da questão criada em vez de True
+        return questao_id
     except psycopg2.Error as e:
         print(f"Erro ao inserir questão via IA: {e}")
         conn.rollback()
-        return False
+        # ATUALIZAÇÃO 1: Retorna None em caso de falha
+        return None
     finally:
         cursor.close()
         conn.close()
@@ -154,6 +157,7 @@ def login_required(f):
         if 'user_id' not in session:
             return redirect(url_for('login'))
         return f(*args, **kwargs)
+
     return decorated_function
 
 
@@ -163,6 +167,7 @@ def login_required(f):
 def chat_ia():
     data = request.get_json()
     user_message = data.get('message')
+
     pending_action = "Sim" if 'pending_question' in session else "Não"
     intent_prompt = f"""
     Analise a mensagem do usuário para determinar a intenção. As intenções possíveis são: SEARCH, CREATE, INSERT, CHAT.
@@ -177,6 +182,7 @@ def chat_ia():
     pending_action: {pending_action}
     Mensagem do usuário: "{user_message}"
     """
+
     try:
         response = model.generate_content(intent_prompt)
         intent_data = clean_and_parse_json(response.text)
@@ -226,8 +232,12 @@ def chat_ia():
         elif intent == "INSERT":
             pending_question = session.get('pending_question')
             if pending_question:
-                if insert_question_in_db(pending_question):
-                    message = "Perfeito! A questão foi cadastrada com sucesso no seu banco de dados. ✅"
+                # ATUALIZAÇÃO 2: Salva o ID retornado pela função
+                new_question_id = insert_question_in_db(pending_question)
+
+                # ATUALIZAÇÃO 2: Verifica se o ID é válido e o usa na mensagem
+                if new_question_id:
+                    message = f"Perfeito! A questão #{new_question_id} foi cadastrada com sucesso no seu banco de dados. ✅"
                     session.pop('pending_question', None)
                 else:
                     message = "Ocorreu um erro ao tentar cadastrar a questão. Por favor, tente novamente."
@@ -247,7 +257,8 @@ def chat_ia():
     except Exception as e:
         print(f"Erro na API do Gemini ou no processamento do chat: {e}")
         session.pop('pending_question', None)
-        return jsonify({'type': 'chat', 'message': 'Desculpe, não consegui processar a resposta da IA. Poderia reformular seu pedido?'}), 500
+        return jsonify({'type': 'chat',
+                        'message': 'Desculpe, não consegui processar a resposta da IA. Poderia reformular seu pedido?'}), 500
 
 
 # --- ROTAS EXISTENTES (AJUSTADAS PARA O NOVO CAMPO) ---
@@ -257,11 +268,13 @@ def index():
         return redirect(url_for('painel'))
     return redirect(url_for('login'))
 
+
 @app.route('/painel')
 @login_required
 def painel():
     nome_completo, foto_perfil_url = get_user_data()
     return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url, view='home')
+
 
 @app.route('/search_questoes')
 @login_required
@@ -291,6 +304,7 @@ def search_questoes():
         if conn:
             cursor.close()
             conn.close()
+
 
 @app.route('/banco_questoes')
 @login_required
@@ -322,6 +336,7 @@ def banco_questoes():
                            view='banco_questoes',
                            questoes=lista_questoes, search_query=search_query)
 
+
 @app.route('/cadastrar_questoes')
 @login_required
 def cadastrar_questoes():
@@ -329,11 +344,13 @@ def cadastrar_questoes():
     return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url,
                            view='cadastrar_questoes')
 
+
 @app.route('/chat_ia')
 @login_required
 def chat_page():
     nome_completo, foto_perfil_url = get_user_data()
     return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url, view='chat_ia')
+
 
 @app.route('/generate_questao', methods=['POST'])
 @login_required
@@ -342,14 +359,13 @@ def generate_questao():
     tipo = data.get('tipo', 'ESCOLHA_UNICA')
     nivel = data.get('nivel', 'Fácil')
     grau = data.get('grau', 'Ensino Fundamental')
-    # Adicionamos a area_conhecimento aqui também para consistência
     area = data.get('area', 'Conhecimentos Gerais')
     prompt = (f"Gere uma questão de {tipo.replace('_', ' ').lower()} "
               f"com dificuldade {nivel.lower()} para o {grau.lower()} sobre {area}. "
               "O enunciado deve ser claro. Para questões de escolha única ou múltipla, "
               "gere 4 opções, e uma ou mais delas deve ser a correta. "
               "Formate a resposta como um JSON válido com as seguintes chaves: "
-              "'enunciado', 'tipo', 'nivel_dificuldade', 'grau_ensino', 'area_conhecimento', 'opcoes'. "
+              "'enunciado', 'tipo_questao', 'nivel_dificuldade', 'grau_ensino', 'area_conhecimento', 'opcoes'. "
               "A chave 'opcoes' deve ser uma lista de objetos, cada um com as chaves 'texto' e 'is_correta' (booleano). "
               "O JSON deve estar completo e não pode conter comentários ou texto extra.")
     try:
@@ -362,8 +378,7 @@ def generate_questao():
         print(f"Erro ao gerar questão com Gemini: {e}")
         return jsonify({'error': 'Falha ao gerar questão com a IA.'}), 500
 
-# ... (O resto das suas rotas, como /lixeira, /configuracoes, etc., permanecem as mesmas)
-# ... Por favor, mantenha o restante do seu arquivo a partir daqui.
+
 @app.route('/lixeira')
 @login_required
 def lixeira():
@@ -578,7 +593,7 @@ def edit_questao(questao_id):
     enunciado = request.form.get('enunciado')
     nivel_dificuldade_form = request.form.get('nivel_dificuldade')
     grau_ensino = request.form.get('grau_ensino')
-    area_conhecimento = request.form.get('area_conhecimento') # Pega o novo campo do form
+    area_conhecimento = request.form.get('area_conhecimento')
     if not all([enunciado, nivel_dificuldade_form]):
         flash("Enunciado e Nível de Dificuldade são obrigatórios.", "error")
         return redirect(url_for('banco_questoes'))
@@ -625,7 +640,7 @@ def add_questao():
     enunciado = request.form.get('enunciado')
     nivel_dificuldade_form = request.form.get('nivel_dificuldade')
     grau_ensino = request.form.get('grau_ensino')
-    area_conhecimento = request.form.get('area_conhecimento') # Pega o novo campo do form
+    area_conhecimento = request.form.get('area_conhecimento')
     if not all([tipo_questao, enunciado, nivel_dificuldade_form]):
         flash("Todos os campos principais são obrigatórios.", "error")
         return redirect(url_for('cadastrar_questoes'))
@@ -636,10 +651,12 @@ def add_questao():
         conn = get_db_connection()
         cursor = conn.cursor()
         sql_questao = """
-                      INSERT INTO questoes (enunciado, tipo_questao, autor_id, nivel_dificuldade, grau_ensino, area_conhecimento)
+                      INSERT INTO questoes (enunciado, tipo_questao, autor_id, nivel_dificuldade, grau_ensino, \
+                                            area_conhecimento)
                       VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
                       """
-        cursor.execute(sql_questao, (enunciado, tipo_questao, session['user_id'], nivel_dificuldade_db, grau_ensino, area_conhecimento))
+        cursor.execute(sql_questao, (enunciado, tipo_questao, session['user_id'], nivel_dificuldade_db, grau_ensino,
+                                     area_conhecimento))
         questao_id = cursor.fetchone()[0]
         if tipo_questao in ['ESCOLHA_UNICA', 'MULTIPLA_ESCOLHA']:
             opcoes_texto = request.form.getlist('opcoes_texto[]')
