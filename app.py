@@ -107,8 +107,8 @@ def search_questoes():
             conn.close()
 
 
-@app.route('/questoes')
-def questoes():
+@app.route('/banco_questoes')
+def banco_questoes():
     if 'user_id' not in session: return redirect(url_for('login'))
 
     search_query = request.args.get('q', '')
@@ -135,14 +135,38 @@ def questoes():
         lista_questoes = cursor.fetchall()
     except psycopg2.Error as e:
         flash("Erro ao carregar as questões.", "error")
-        print(f"Erro em /questoes: {e}")
+        print(f"Erro em /banco_questoes: {e}")
     finally:
         if conn:
             cursor.close()
             conn.close()
 
-    return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url, view='questoes',
+    return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url, view='banco_questoes',
                            questoes=lista_questoes, search_query=search_query)
+
+
+@app.route('/cadastrar_questoes')
+def cadastrar_questoes():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    nome_completo = f"{session.get('user_nome', '')} {session.get('user_sobrenome', '')}".strip()
+    foto_perfil_url = None
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=DictCursor)
+        cursor.execute('SELECT foto_perfil FROM usuarios WHERE id = %s', (session['user_id'],))
+        user = cursor.fetchone()
+        if user and user.get('foto_perfil'):
+            data = user['foto_perfil']
+            foto_perfil_url = data.decode('utf-8') if isinstance(data, (bytes, bytearray)) else data
+    except psycopg2.Error as e:
+        print(f"Erro ao buscar foto de perfil: {e}")
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
+    return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url, view='cadastrar_questoes')
 
 
 @app.route('/lixeira')
@@ -372,7 +396,7 @@ def edit_questao(questao_id):
     grau_ensino = request.form.get('grau_ensino')
     if not all([enunciado, nivel_dificuldade_form]):
         flash("Enunciado e Nível de Dificuldade são obrigatórios.", "error")
-        return redirect(url_for('questoes'))
+        return redirect(url_for('banco_questoes')) # Redireciona para o banco de questoes
 
     dificuldade_map = {
         'FACIL': 'Fácil',
@@ -390,7 +414,7 @@ def edit_questao(questao_id):
         result = cursor.fetchone()
         if not result or result['autor_id'] != user_id:
             flash("Você não tem permissão para editar esta questão.", "error")
-            return redirect(url_for('questoes'))
+            return redirect(url_for('banco_questoes')) # Redireciona para o banco de questoes
 
         tipo_questao = result['tipo_questao']
         sql_update = "UPDATE questoes SET enunciado = %s, nivel_dificuldade = %s, grau_ensino = %s WHERE id = %s"
@@ -415,7 +439,7 @@ def edit_questao(questao_id):
         if conn:
             cursor.close()
             conn.close()
-    return redirect(url_for('questoes'))
+    return redirect(url_for('banco_questoes')) # Redireciona para o banco de questoes
 
 
 @app.route('/add_questao', methods=['POST'])
@@ -428,7 +452,7 @@ def add_questao():
     autor_id = session['user_id']
     if not all([tipo_questao, enunciado, nivel_dificuldade_form]):
         flash("Todos os campos principais são obrigatórios.", "error")
-        return redirect(url_for('questoes'))
+        return redirect(url_for('cadastrar_questoes'))
 
     dificuldade_map = {
         'FACIL': 'Fácil',
@@ -465,11 +489,12 @@ def add_questao():
         if conn: conn.rollback()
         flash(f"Erro ao cadastrar a questão: {e}", "error")
         print(f"Erro em /add_questao: {e}")
+        return redirect(url_for('cadastrar_questoes')) # Redireciona para o formulário de cadastro em caso de erro
     finally:
         if conn:
             cursor.close()
             conn.close()
-    return redirect(url_for('questoes'))
+    return redirect(url_for('banco_questoes')) # Redireciona para o banco de questoes
 
 
 @app.route('/upload_foto', methods=['POST'])
