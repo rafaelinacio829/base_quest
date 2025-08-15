@@ -70,7 +70,7 @@
             <div class="search-area">
                 <main class="search-wrapper" id="searchWrapper">
                     <div id="searchTermBubble" class="search-term-bubble" style="display: none;"></div>
-                    <input type="search" id="searchInput" class="search-input" placeholder="Buscar por título, nível ou grau de ensino...">
+                    <input type="search" id="searchInput" class="search-input" placeholder="Buscar por título, nível, grau ou área...">
                     <button type="button" id="searchBtn" class="search-bubble" title="Buscar">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
                     </button>
@@ -126,6 +126,9 @@
                                     <span class="tag tag-{{ questao.nivel_dificuldade|lower }}">{{ questao.nivel_dificuldade.replace('_', ' ') }}</span>
                                     {% if questao.grau_ensino %}
                                     <span class="tag tag-grau">{{ questao.grau_ensino }}</span>
+                                    {% endif %}
+                                    {% if questao.area_conhecimento %}
+                                    <span class="tag tag-area">{{ questao.area_conhecimento }}</span>
                                     {% endif %}
                                 </div>
                             </div>
@@ -183,6 +186,11 @@
                                 <option value="Ensino Superior">Ensino Superior</option>
                             </select>
                         </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="area_conhecimento">Área de Conhecimento</label>
+                        <input type="text" name="area_conhecimento" id="area_conhecimento" placeholder="Ex: Matemática, Biologia, História...">
                     </div>
 
                     <div id="optionsContainer"></div>

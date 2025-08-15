@@ -142,7 +142,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const setupInteractiveSearch = () => {
         const searchWrapper = document.getElementById('searchWrapper'), searchInput = document.getElementById('searchInput'), searchBtn = document.getElementById('searchBtn'), searchTermBubble = document.getElementById('searchTermBubble'), searchResultsContainer = document.getElementById('searchResultsContainer'), searchResultsList = document.getElementById('searchResultsList');
 
-        // Adiciona a classe 'expanded' ao clicar na caixa de busca, se ainda não estiver expandida
         searchWrapper?.addEventListener('click', (event) => {
             if (!searchWrapper.classList.contains('expanded')) {
                 searchWrapper.classList.add('expanded');
@@ -168,7 +167,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 searchResultsList.innerHTML = '';
                 if (results.length > 0) {
                     results.forEach(questao => {
-                        const tagsHTML = `<span class="tag tag-${questao.nivel_dificuldade.toLowerCase()}">${questao.nivel_dificuldade.replace('_', ' ')}</span> ${questao.grau_ensino ? `<span class="tag tag-grau">${questao.grau_ensino}</span>` : ''}`;
+                        // ATUALIZAÇÃO: Adiciona a tag da área de conhecimento aos resultados da busca rápida
+                        const tagsHTML = `<span class="tag tag-${questao.nivel_dificuldade.toLowerCase()}">${questao.nivel_dificuldade.replace('_', ' ')}</span>` +
+                                       `${questao.grau_ensino ? `<span class="tag tag-grau">${questao.grau_ensino}</span>` : ''}` +
+                                       `${questao.area_conhecimento ? `<span class="tag tag-area">${questao.area_conhecimento}</span>` : ''}`;
+
                         searchResultsList.innerHTML += `<div class="question-item" data-id="${questao.id}" data-context="search-result"><div class="question-item-content"><p><strong>#${questao.id}:</strong> ${questao.enunciado}</p><div class="question-tags">${tagsHTML}</div></div></div>`;
                     });
                 } else { searchResultsList.innerHTML = `<p>Nenhum resultado rápido encontrado.</p>`; }
@@ -187,8 +190,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (searchWrapper && !searchWrapper.contains(event.target) && searchResultsContainer && !searchResultsContainer.contains(event.target)) {
                 searchResultsContainer.style.display = 'none';
                 searchTermBubble.style.display = 'none';
-                searchWrapper.classList.remove('expanded'); // Remove a classe 'expanded'
-                if (searchInput) { searchInput.value = ''; searchInput.placeholder = 'Buscar por título, nível ou grau de ensino...'; }
+                searchWrapper.classList.remove('expanded');
+                if (searchInput) { searchInput.value = ''; searchInput.placeholder = 'Buscar por título, nível, grau ou área...'; }
             }
         });
     };
@@ -220,27 +223,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const tipo = tipoQuestaoSelect.value;
             const nivel = nivelDificuldadeSelect.value;
             const grau = grauEnsinoSelect.value;
+            // ATUALIZAÇÃO: Pega a área de conhecimento do form para enviar para a IA
+            const area = document.getElementById('area_conhecimento')?.value || 'Conhecimentos Gerais';
 
             try {
-                // Remove opções existentes e reseta o formulário
                 updateFormUI();
                 enunciadoInput.value = '';
-
                 showFlashMessage('Gerando questão com IA...', 'info');
 
                 const response = await fetch('/generate_questao', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ tipo, nivel, grau }),
+                    body: JSON.stringify({ tipo, nivel, grau, area }),
                 });
 
                 if (!response.ok) {
                     throw new Error((await response.json()).error || 'Falha na comunicação com a IA.');
                 }
-
                 const data = await response.json();
-
-                // Preenche o formulário com a resposta da IA
                 enunciadoInput.value = data.enunciado;
 
                 if (data.opcoes && data.opcoes.length > 0) {
@@ -248,9 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     optionCount = 0;
                     data.opcoes.forEach(op => addOptionField(op.texto, op.is_correta));
                 }
-
                 showFlashMessage('Questão gerada com sucesso! Revise e salve.', 'success');
-
             } catch (error) {
                 console.error("Erro ao gerar questão com IA:", error);
                 showFlashMessage(`Erro ao gerar questão: ${error.message}`, 'error');
@@ -321,7 +319,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentQuestionData = await response.json();
                 switchToViewMode();
                 if (modalQuestionTitle) modalQuestionTitle.textContent = `#${currentQuestionData.id}: ${currentQuestionData.enunciado || ''}`;
-                if (modalTags) { const nivel = currentQuestionData.nivel_dificuldade || 'desconhecido'; modalTags.innerHTML = `<span class="tag tag-${nivel.toLowerCase()}">${nivel.replace('_', ' ')}</span> ${currentQuestionData.grau_ensino ? `<span class="tag tag-grau">${currentQuestionData.grau_ensino}</span>` : ''}`; }
+
+                // ATUALIZAÇÃO: Monta a string de tags incluindo a área de conhecimento
+                if (modalTags) {
+                    const nivel = currentQuestionData.nivel_dificuldade || 'desconhecido';
+                    let tagsHTML = `<span class="tag tag-${nivel.toLowerCase().replace(' ', '_')}">${nivel.replace('_', ' ')}</span>`;
+                    if (currentQuestionData.grau_ensino) {
+                        tagsHTML += ` <span class="tag tag-grau">${currentQuestionData.grau_ensino}</span>`;
+                    }
+                    if (currentQuestionData.area_conhecimento) {
+                        tagsHTML += ` <span class="tag tag-area">${currentQuestionData.area_conhecimento}</span>`;
+                    }
+                    modalTags.innerHTML = tagsHTML;
+                }
+
                 if (modalOptionsList) {
                     modalOptionsList.innerHTML = '';
                     if (Array.isArray(currentQuestionData.opcoes) && currentQuestionData.opcoes.length > 0) { currentQuestionData.opcoes.forEach(op => { const li = document.createElement('li'); li.textContent = op.texto_opcao; if (op.is_correta) li.classList.add('correct'); modalOptionsList.appendChild(li); }); }
@@ -337,9 +348,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const closeModal = () => { if (questionModalOverlay) { questionModalOverlay.classList.remove('open'); setTimeout(switchToViewMode, 300); } };
 
-        // ===============================================
-        // == FUNÇÃO switchToEditMode COMPLETA E CORRIGIDA ==
-        // ===============================================
         const switchToEditMode = () => {
             if (!modalViewContent || !modalEditContent || !currentQuestionData) return;
             modalViewContent.style.display = 'none';
@@ -355,18 +363,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
+            // ATUALIZAÇÃO: Adiciona o campo de edição da Área de Conhecimento no modal
             modalEditContent.innerHTML = `
                 <form id="editQuestionForm" action="/edit_questao/${currentQuestionData.id}" method="POST">
                     <div class="form-group"><label>Enunciado</label><textarea name="enunciado" rows="4" required>${currentQuestionData.enunciado || ''}</textarea></div>
                     <div class="form-row">
-                        <div class="form-group"><label>Nível de Dificuldade</label><select name="nivel_dificuldade" required><option value="FACIL" ${currentQuestionData.nivel_dificuldade === 'FACIL' ? 'selected' : ''}>Fácil</option><option value="MEDIO" ${currentQuestionData.nivel_dificuldade === 'MEDIO' ? 'selected' : ''}>Médio</option><option value="DIFICIL" ${currentQuestionData.nivel_dificuldade === 'DIFICIL' ? 'selected' : ''}>Difícil</option></select></div>
+                        <div class="form-group"><label>Nível de Dificuldade</label><select name="nivel_dificuldade" required><option value="FACIL" ${currentQuestionData.nivel_dificuldade === 'Fácil' ? 'selected' : ''}>Fácil</option><option value="MEDIO" ${currentQuestionData.nivel_dificuldade === 'Médio' ? 'selected' : ''}>Médio</option><option value="DIFICIL" ${currentQuestionData.nivel_dificuldade === 'Difícil' ? 'selected' : ''}>Difícil</option><option value="MUITO_DIFICIL" ${currentQuestionData.nivel_dificuldade === 'Muito Difícil' ? 'selected' : ''}>Muito Difícil</option></select></div>
                         <div class="form-group"><label>Grau de Ensino</label><input type="text" name="grau_ensino" value="${currentQuestionData.grau_ensino || ''}" placeholder="Ex: Ensino Médio"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Área de Conhecimento</label>
+                        <input type="text" name="area_conhecimento" value="${currentQuestionData.area_conhecimento || ''}" placeholder="Ex: Matemática, Biologia">
                     </div>
                     <input type="hidden" name="tipo_questao" value="${currentQuestionData.tipo_questao}">
                     ${optionsHTML}
                     <div class="modal-footer"><button type="button" class="secondary-btn" id="cancelEditBtn">Cancelar</button><button type="submit" class="submit-btn">Salvar Alterações</button></div>
                 </form>`;
-            // Adiciona o listener para o novo botão "Cancelar" do modo de edição
+
             document.getElementById('cancelEditBtn')?.addEventListener('click', switchToViewMode);
         };
 
@@ -416,16 +429,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Listener para o botão de editar principal
         modalEditBtn?.addEventListener('click', switchToEditMode);
-
         modalDeleteBtn?.addEventListener('click', () => { if (modalDeleteBtn.dataset.id) { handleDeleteQuestion(modalDeleteBtn.dataset.id); closeModal(); } });
         modalCloseBtn?.addEventListener('click', closeModal);
         questionModalOverlay?.addEventListener('click', e => { if (e.target === questionModalOverlay) closeModal(); });
     };
 
     // ===================================
-    // === NOVO MÓDULO: CHAT COM IA ===
+    // MÓDULO: CHAT COM IA
     // ===================================
     const setupAIChat = () => {
         const chatForm = document.getElementById('chat-form');
@@ -437,8 +448,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const addMessage = (sender, message) => {
             const messageElement = document.createElement('div');
+            // ATUALIZAÇÃO: usa innerHTML para renderizar markdown como **negrito**
             messageElement.classList.add(sender === 'user' ? 'user-message' : 'ai-message');
-            messageElement.textContent = message;
+            // Simples substituição de markdown para negrito
+            const formattedMessage = message.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            messageElement.innerHTML = formattedMessage.replace(/\n/g, '<br>');
             chatMessages.appendChild(messageElement);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         };
@@ -450,9 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             addMessage('user', userMessage);
             chatInput.value = '';
-            conversationHistory.push(['Usuário', userMessage]);
 
-            // Adiciona uma mensagem de "digitando..."
             const typingIndicator = document.createElement('div');
             typingIndicator.classList.add('ai-message', 'typing');
             typingIndicator.textContent = 'Digitando...';
@@ -463,47 +475,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: userMessage, history: conversationHistory }),
+                    body: JSON.stringify({ message: userMessage }),
                 });
 
-                chatMessages.removeChild(typingIndicator); // Remove o "digitando..."
+                chatMessages.removeChild(typingIndicator);
 
                 if (!response.ok) {
                     throw new Error('Erro na comunicação com a IA.');
                 }
 
                 const data = await response.json();
-                let aiResponse;
-
-                if (data.type === 'question') {
-                    // Formata a questão como uma string para exibição no chat
-                    aiResponse = `Ok, aqui está uma sugestão de questão:\n\n` +
-                                 `Enunciado: ${data.data.enunciado}\n` +
-                                 `Tipo: ${data.data.tipo}\n` +
-                                 `Nível: ${data.data.nivel}\n` +
-                                 `Grau: ${data.data.grau}\n`;
-                    if(data.data.opcoes && data.data.opcoes.length > 0){
-                        aiResponse += `Opções:\n`;
-                        data.data.opcoes.forEach((op, i) => {
-                            aiResponse += `${i+1}. ${op.texto} ${op.is_correta ? '(Correta)' : ''}\n`;
-                        });
-                    }
-                } else {
-                    aiResponse = data.message;
-                }
-
-                addMessage('ai', aiResponse);
-                conversationHistory.push(['IA', aiResponse]);
+                addMessage('ai', data.message);
 
             } catch (error) {
                 console.error('Erro no chat com IA:', error);
+                const typingIndicator = chatMessages.querySelector('.typing');
+                if(typingIndicator) chatMessages.removeChild(typingIndicator);
                 addMessage('ai', 'Desculpe, ocorreu um erro. Tente novamente.');
             }
         });
     };
 
     // ===================================
-    // INICIALIZAÇÃO DE TODOS OS MÓDULOS
+    // INICIALIZAÇÃO DE TODOS OS MÓDUTOS
     // ===================================
     setupThemeToggler();
     setupLoginForm();
@@ -513,5 +507,5 @@ document.addEventListener('DOMContentLoaded', () => {
     setupQuestionForm();
     setupSelectionAndExport();
     setupQuestionModal();
-    setupAIChat(); // <-- CHAMADA DA NOVA FUNÇÃO
+    setupAIChat();
 });
