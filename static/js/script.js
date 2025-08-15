@@ -425,6 +425,84 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ===================================
+    // === NOVO MÓDULO: CHAT COM IA ===
+    // ===================================
+    const setupAIChat = () => {
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+        const chatMessages = document.getElementById('chat-messages');
+        if (!chatForm || !chatInput || !chatMessages) return;
+
+        let conversationHistory = [];
+
+        const addMessage = (sender, message) => {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add(sender === 'user' ? 'user-message' : 'ai-message');
+            messageElement.textContent = message;
+            chatMessages.appendChild(messageElement);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        };
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const userMessage = chatInput.value.trim();
+            if (!userMessage) return;
+
+            addMessage('user', userMessage);
+            chatInput.value = '';
+            conversationHistory.push(['Usuário', userMessage]);
+
+            // Adiciona uma mensagem de "digitando..."
+            const typingIndicator = document.createElement('div');
+            typingIndicator.classList.add('ai-message', 'typing');
+            typingIndicator.textContent = 'Digitando...';
+            chatMessages.appendChild(typingIndicator);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: userMessage, history: conversationHistory }),
+                });
+
+                chatMessages.removeChild(typingIndicator); // Remove o "digitando..."
+
+                if (!response.ok) {
+                    throw new Error('Erro na comunicação com a IA.');
+                }
+
+                const data = await response.json();
+                let aiResponse;
+
+                if (data.type === 'question') {
+                    // Formata a questão como uma string para exibição no chat
+                    aiResponse = `Ok, aqui está uma sugestão de questão:\n\n` +
+                                 `Enunciado: ${data.data.enunciado}\n` +
+                                 `Tipo: ${data.data.tipo}\n` +
+                                 `Nível: ${data.data.nivel}\n` +
+                                 `Grau: ${data.data.grau}\n`;
+                    if(data.data.opcoes && data.data.opcoes.length > 0){
+                        aiResponse += `Opções:\n`;
+                        data.data.opcoes.forEach((op, i) => {
+                            aiResponse += `${i+1}. ${op.texto} ${op.is_correta ? '(Correta)' : ''}\n`;
+                        });
+                    }
+                } else {
+                    aiResponse = data.message;
+                }
+
+                addMessage('ai', aiResponse);
+                conversationHistory.push(['IA', aiResponse]);
+
+            } catch (error) {
+                console.error('Erro no chat com IA:', error);
+                addMessage('ai', 'Desculpe, ocorreu um erro. Tente novamente.');
+            }
+        });
+    };
+
+    // ===================================
     // INICIALIZAÇÃO DE TODOS OS MÓDULOS
     // ===================================
     setupThemeToggler();
@@ -435,4 +513,5 @@ document.addEventListener('DOMContentLoaded', () => {
     setupQuestionForm();
     setupSelectionAndExport();
     setupQuestionModal();
+    setupAIChat(); // <-- CHAMADA DA NOVA FUNÇÃO
 });

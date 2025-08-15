@@ -9,7 +9,7 @@
     --transition-fast: 0.2s ease-in-out;
     --transition-medium: 0.3s ease-in-out;
     --transition-slow: 0.7s cubic-bezier(0.83, 0, 0.17, 1);
-    --transition-elastic: 0.6s cubic-in-out;
+    --transition-elastic: 0.6s cubic-bezier(0.68, -0.55, 0.27, 1.55);
 
     /* Cores de Acento (usadas em ambos os temas) */
     --accent-color: #805AD5;
@@ -734,4 +734,127 @@ html, body {
 .modal-options-list li.correct {
     border-left-color: var(--btn-success-bg);
     font-weight: 600;
+}
+/* ==================================== */
+/* === ESTILOS MELHORADOS DO CHAT IA === */
+/* ==================================== */
+
+.chat-panel {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    /* Ajusta o padding para dar mais espaço ao container do chat */
+    padding: 100px 20px 20px 20px;
+}
+
+#chat-container {
+    width: 100%;
+    max-width: 800px;
+    height: 75vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-card-transparent);
+    border-radius: 20px;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+#chat-messages {
+    flex-grow: 1;
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Estilo base para todas as mensagens */
+.ai-message, .user-message {
+    padding: 12px 18px;
+    border-radius: 18px;
+    max-width: 75%;
+    line-height: 1.5;
+    word-wrap: break-word;
+    /* Adiciona transição para suavizar a aparição */
+    opacity: 0;
+    transform: translateY(10px);
+    animation: fadeUp 0.3s ease forwards;
+}
+
+@keyframes fadeUp {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Mensagem da IA (esquerda) */
+.ai-message {
+    background-color: var(--color-bg-light-variant);
+    color: var(--color-text);
+    align-self: flex-start;
+    border-bottom-left-radius: 4px;
+}
+
+/* Mensagem do Usuário (direita) */
+.user-message {
+    background-color: var(--accent-color);
+    color: white;
+    align-self: flex-end;
+    border-bottom-right-radius: 4px;
+}
+
+/* Indicador "Digitando..." */
+.ai-message.typing {
+    color: var(--color-text-secondary);
+    font-style: italic;
+}
+
+#chat-form {
+    display: flex;
+    gap: 10px;
+    padding: 15px;
+    border-top: 1px solid var(--color-border);
+    background-color: var(--color-card-transparent);
+}
+
+#chat-input {
+    flex-grow: 1;
+    border: none;
+    background-color: var(--color-bg-light-variant);
+    color: var(--color-text);
+    padding: 12px 20px;
+    border-radius: 25px;
+    font-size: 1rem;
+    outline: none;
+    transition: box-shadow var(--transition-fast);
+}
+
+#chat-input:focus {
+    box-shadow: 0 0 0 3px rgba(128, 90, 213, 0.25);
+}
+
+#chat-send-btn {
+    border: none;
+    background-color: var(--accent-color);
+    color: white;
+    font-size: 1.2rem;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    cursor: pointer;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color var(--transition-medium), transform var(--transition-fast);
+}
+
+#chat-send-btn:hover {
+    background-color: var(--accent-color-hover);
+    transform: scale(1.05);
 }

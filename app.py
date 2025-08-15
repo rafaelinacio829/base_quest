@@ -9,6 +9,7 @@ from flask import (Flask, render_template, request, redirect, url_for,
                    flash, session, jsonify, Response)
 from flask_bcrypt import Bcrypt
 from dotenv import load_dotenv
+from functools import wraps
 
 # NOVAS IMPORTAÇÕES PARA PDF E DOCX
 from fpdf import FPDF
@@ -26,17 +27,15 @@ app.secret_key = os.environ.get('SECRET_KEY')
 bcrypt = Bcrypt(app)
 
 # --- CONFIGURAÇÃO DA API GEMINI ---
-# Substitua 'YOUR_GEMINI_API_KEY' pela sua chave de API
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY"))
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
-# Configuração do modelo generativo
 generation_config = {
     "temperature": 0.7,
     "top_p": 1,
     "top_k": 1,
     "max_output_tokens": 2048,
 }
-model = genai.GenerativeModel(model_name="gemini-pro", generation_config=generation_config)
+model = genai.GenerativeModel(model_name="gemini-2.0-flash", generation_config=generation_config)
 
 
 def get_db_connection():
@@ -59,16 +58,77 @@ def get_db_connection():
         raise e
 
 
-@app.route('/')
-def index():
-    if 'user_id' in session:
-        return redirect(url_for('painel'))
-    return redirect(url_for('login'))
+def clean_and_parse_json(response_text):
+    """Limpa e tenta decodificar uma string JSON da resposta da IA."""
+    if not response_text:
+        return None
+    clean_text = response_text.strip().replace('```json', '').replace('```', '').strip()
+    try:
+        return json.loads(clean_text)
+    except json.JSONDecodeError as e:
+        print(f"Erro ao decodificar JSON da IA: {e}")
+        print(f"Texto recebido: {clean_text}")
+        return None
 
 
-@app.route('/painel')
-def painel():
-    if 'user_id' not in session: return redirect(url_for('login'))
+# --- FUNÇÕES AUXILIARES DE BANCO DE DADOS ---
+def search_questions_in_db(query_term):
+    """Busca questões no banco de dados pelo termo fornecido."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=DictCursor)
+    like_term = f"%{query_term}%"
+    cursor.execute("SELECT id, enunciado FROM questoes WHERE is_active = TRUE AND enunciado ILIKE %s LIMIT 10",
+                   (like_term,))
+    results = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return results
+
+
+def insert_question_in_db(question_data):
+    """Insere uma nova questão e suas opções no banco de dados."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # --- AJUSTE APLICADO AQUI ---
+        # Mapeia o nível de dificuldade do formato da IA para o formato do BD
+        dificuldade_map = {'FACIL': 'Fácil', 'MEDIO': 'Médio', 'DIFICIL': 'Difícil', 'MUITO_DIFICIL': 'Muito Difícil'}
+        nivel_dificuldade_ia = question_data.get('nivel_dificuldade', 'MEDIO').upper()
+        nivel_dificuldade_db = dificuldade_map.get(nivel_dificuldade_ia, 'Médio')
+
+        sql_questao = """
+                      INSERT INTO questoes (enunciado, tipo_questao, autor_id, nivel_dificuldade, grau_ensino)
+                      VALUES (%s, %s, %s, %s, %s) RETURNING id
+                      """
+        cursor.execute(sql_questao, (
+            question_data.get('enunciado'),
+            question_data.get('tipo_questao', 'ESCOLHA_UNICA'),
+            session['user_id'],
+            nivel_dificuldade_db,  # Usa o valor mapeado
+            question_data.get('grau_ensino')
+        ))
+        questao_id = cursor.fetchone()[0]
+
+        if 'opcoes' in question_data and questao_id:
+            for opcao in question_data['opcoes']:
+                sql_opcao = "INSERT INTO opcoes (questao_id, texto_opcao, is_correta) VALUES (%s, %s, %s)"
+                cursor.execute(sql_opcao, (questao_id, opcao.get('texto_opcao'), bool(opcao.get('is_correta'))))
+
+        conn.commit()
+        return True
+    except psycopg2.Error as e:
+        print(f"Erro ao inserir questão via IA: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_user_data():
+    """Busca os dados básicos do usuário logado."""
+    if 'user_id' not in session:
+        return None, None
     nome_completo = f"{session.get('user_nome', '')} {session.get('user_sobrenome', '')}".strip()
     foto_perfil_url = None
     conn = None
@@ -77,28 +137,147 @@ def painel():
         cursor = conn.cursor(cursor_factory=DictCursor)
         cursor.execute('SELECT foto_perfil FROM usuarios WHERE id = %s', (session['user_id'],))
         user = cursor.fetchone()
-
         if user and user.get('foto_perfil'):
             data = user['foto_perfil']
             foto_perfil_url = data.decode('utf-8') if isinstance(data, (bytes, bytearray)) else data
     except psycopg2.Error as e:
-        print(f"Erro ao buscar foto de perfil: {e}")
+        print(f"Erro ao buscar dados do usuário: {e}")
     finally:
         if conn:
             cursor.close()
             conn.close()
+    return nome_completo, foto_perfil_url
+
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+# --- ROTA DO CHAT COM IA (AJUSTADA) ---
+@app.route('/api/chat', methods=['POST'])
+@login_required
+def chat_ia():
+    data = request.get_json()
+    user_message = data.get('message')
+
+    pending_action = "Sim" if 'pending_question' in session else "Não"
+    intent_prompt = f"""
+    Analise a mensagem do usuário para determinar a intenção. As intenções possíveis são: SEARCH, CREATE, INSERT, CHAT.
+    - Se o usuário quer procurar, pesquisar ou buscar, a intenção é SEARCH.
+    - Se o usuário quer criar ou gerar uma questão, a intenção é CREATE.
+    - Se uma questão foi recém-criada (pending_action='Sim') e a mensagem do usuário é afirmativa (sim, pode, cadastre, confirme), a intenção é INSERT.
+    - Caso contrário, a intenção é CHAT.
+    Extraia o tópico/termo de busca se a intenção for SEARCH ou CREATE.
+    Responda APENAS com um JSON.
+    Exemplo: {{"intent": "SEARCH", "topic": "corpo humano"}}
+
+    pending_action: {pending_action}
+    Mensagem do usuário: "{user_message}"
+    """
+
+    try:
+        response = model.generate_content(intent_prompt)
+        intent_data = clean_and_parse_json(response.text)
+
+        if not intent_data:
+            raise ValueError("A IA não retornou um JSON de intenção válido.")
+
+        intent = intent_data.get("intent")
+        topic = intent_data.get("topic")
+
+        if intent == "SEARCH":
+            results = search_questions_in_db(topic)
+            if results:
+                message = f"Encontrei {len(results)} questões sobre '{topic}':\n"
+                for res in results:
+                    message += f"- #{res['id']}: {res['enunciado'][:80]}...\n"
+            else:
+                message = f"Não encontrei nenhuma questão sobre '{topic}'. Gostaria que eu criasse uma para você?"
+            return jsonify({'type': 'chat', 'message': message})
+
+        elif intent == "CREATE":
+            create_prompt = f"""
+            Crie uma questão de múltipla escolha sobre o tópico "{topic}".
+            Formate a resposta como um JSON válido.
+            O JSON deve ter as chaves: "enunciado", "tipo_questao", "nivel_dificuldade", "grau_ensino", e "opcoes".
+            A chave "tipo_questao" DEVE ter o valor "ESCOLHA_UNICA".
+            A chave "nivel_dificuldade" DEVE ser um dos seguintes valores: "FACIL", "MEDIO", "DIFICIL".
+            A chave "opcoes" deve ser uma lista de 4 objetos, cada um com as chaves "texto_opcao" e "is_correta" (booleano), e apenas uma opção pode ser correta.
+            Responda APENAS com o JSON.
+            """
+            response = model.generate_content(create_prompt)
+            question_json = clean_and_parse_json(response.text)
+
+            if not question_json:
+                raise ValueError("A IA não retornou um JSON de questão válido.")
+
+            session['pending_question'] = question_json
+
+            message = f"Criei a seguinte questão sobre '{topic}':\n\n"
+            message += f"**Enunciado:** {question_json.get('enunciado', 'N/A')}\n"
+            for i, opt in enumerate(question_json.get('opcoes', [])):
+                message += f"{i + 1}. {opt.get('texto_opcao', 'N/A')}\n"
+            message += "\nVocê gostaria de cadastrá-la no banco de dados?"
+            return jsonify({'type': 'chat', 'message': message})
+
+        elif intent == "INSERT":
+            pending_question = session.get('pending_question')
+            if pending_question:
+                # A validação e tradução agora acontecem dentro de insert_question_in_db
+                if insert_question_in_db(pending_question):
+                    message = "Perfeito! A questão foi cadastrada com sucesso no seu banco de dados. ✅"
+                    session.pop('pending_question', None)
+                else:
+                    message = "Ocorreu um erro ao tentar cadastrar a questão. Por favor, tente novamente."
+            else:
+                message = "Não encontrei nenhuma questão pendente para cadastrar. Gostaria de criar uma?"
+            return jsonify({'type': 'chat', 'message': message})
+
+        else:  # CHAT
+            chat_prompt = f"""
+            Você é um assistente de IA amigável e prestativo para um banco de questões escolar.
+            Suas funções são: pesquisar, criar e cadastrar questões.
+            Responda à seguinte mensagem do usuário de forma conversacional: "{topic}"
+            """
+            response = model.generate_content(chat_prompt)
+            return jsonify({'type': 'chat', 'message': response.text})
+
+    except Exception as e:
+        print(f"Erro na API do Gemini ou no processamento do chat: {e}")
+        session.pop('pending_question', None)
+        return jsonify({'type': 'chat',
+                        'message': 'Desculpe, não consegui processar a resposta da IA. Poderia reformular seu pedido?'}), 500
+
+
+# --- ROTAS EXISTENTES (MANTENHA TODAS ELAS) ---
+# O código a seguir é o restante do seu arquivo app.py e permanece o mesmo.
+
+@app.route('/')
+def index():
+    if 'user_id' in session:
+        return redirect(url_for('painel'))
+    return redirect(url_for('login'))
+
+
+@app.route('/painel')
+@login_required
+def painel():
+    nome_completo, foto_perfil_url = get_user_data()
     return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url, view='home')
 
 
 @app.route('/search_questoes')
+@login_required
 def search_questoes():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Não autenticado'}), 401
-
     query = request.args.get('q', '')
     if not query or len(query) < 2:
         return jsonify([])
-
     conn = None
     try:
         conn = get_db_connection()
@@ -124,22 +303,15 @@ def search_questoes():
 
 
 @app.route('/banco_questoes')
+@login_required
 def banco_questoes():
-    if 'user_id' not in session: return redirect(url_for('login'))
-
+    nome_completo, foto_perfil_url = get_user_data()
     search_query = request.args.get('q', '')
-    nome_completo = f"{session.get('user_nome', '')} {session.get('user_sobrenome', '')}".strip()
-    foto_perfil_url, lista_questoes = None, []
+    lista_questoes = []
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=DictCursor)
-        cursor.execute('SELECT foto_perfil FROM usuarios WHERE id = %s', (session['user_id'],))
-        user = cursor.fetchone()
-        if user and user.get('foto_perfil'):
-            data = user['foto_perfil']
-            foto_perfil_url = data.decode('utf-8') if isinstance(data, (bytes, bytearray)) else data
-
         sql_query = "SELECT id, enunciado, tipo_questao, nivel_dificuldade, grau_ensino FROM questoes WHERE is_active = TRUE"
         params = []
         if search_query:
@@ -156,47 +328,33 @@ def banco_questoes():
         if conn:
             cursor.close()
             conn.close()
-
     return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url,
                            view='banco_questoes',
                            questoes=lista_questoes, search_query=search_query)
 
 
 @app.route('/cadastrar_questoes')
+@login_required
 def cadastrar_questoes():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    nome_completo = f"{session.get('user_nome', '')} {session.get('user_sobrenome', '')}".strip()
-    foto_perfil_url = None
-    conn = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=DictCursor)
-        cursor.execute('SELECT foto_perfil FROM usuarios WHERE id = %s', (session['user_id'],))
-        user = cursor.fetchone()
-        if user and user.get('foto_perfil'):
-            data = user['foto_perfil']
-            foto_perfil_url = data.decode('utf-8') if isinstance(data, (bytes, bytearray)) else data
-    except psycopg2.Error as e:
-        print(f"Erro ao buscar foto de perfil: {e}")
-    finally:
-        if conn:
-            cursor.close()
-            conn.close()
+    nome_completo, foto_perfil_url = get_user_data()
     return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url,
                            view='cadastrar_questoes')
 
 
-@app.route('/generate_questao', methods=['POST'])
-def generate_questao():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Não autenticado'}), 401
+@app.route('/chat_ia')
+@login_required
+def chat_page():
+    nome_completo, foto_perfil_url = get_user_data()
+    return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url, view='chat_ia')
 
+
+@app.route('/generate_questao', methods=['POST'])
+@login_required
+def generate_questao():
     data = request.get_json()
     tipo = data.get('tipo', 'ESCOLHA_UNICA')
     nivel = data.get('nivel', 'Fácil')
     grau = data.get('grau', 'Ensino Fundamental')
-
     prompt = (f"Gere uma questão de {tipo.replace('_', ' ').lower()} "
               f"com dificuldade {nivel.lower()} para o {grau.lower()}. "
               "O enunciado deve ser claro. Para questões de escolha única ou múltipla, "
@@ -205,76 +363,26 @@ def generate_questao():
               "'enunciado', 'tipo', 'nivel', 'grau', 'opcoes'. "
               "A chave 'opcoes' deve ser uma lista de objetos, cada um com as chaves 'texto' e 'is_correta' (booleano). "
               "O JSON deve estar completo e não pode conter comentários ou texto extra.")
-
     try:
         response = model.generate_content(prompt)
-        response_text = response.text.strip('` \n')
-        if response_text.startswith('json'):
-            response_text = response_text[4:]
-
-        questao_gerada = json.loads(response_text)
+        questao_gerada = clean_and_parse_json(response.text)
+        if not questao_gerada:
+            raise ValueError("A IA não retornou um JSON de questão válido.")
         return jsonify(questao_gerada)
     except Exception as e:
         print(f"Erro ao gerar questão com Gemini: {e}")
         return jsonify({'error': 'Falha ao gerar questão com a IA.'}), 500
 
 
-@app.route('/api/chat', methods=['POST'])
-def chat_ia():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Não autenticado'}), 401
-
-    data = request.get_json()
-    user_message = data.get('message')
-    conversation_history = data.get('history', [])
-
-    if not user_message:
-        return jsonify({'error': 'Mensagem em branco'}), 400
-
-    # Adiciona a mensagem do usuário ao histórico
-    full_prompt = "Você é uma IA generativa para a base de questões de uma escola. Seu principal objetivo é ajudar professores a criar e gerenciar o banco de dados de questões. Você pode responder a perguntas gerais, mas sua funcionalidade principal é criar questões. Quando um usuário pedir para criar uma questão, responda APENAS com um JSON válido contendo a questão. Para todos os outros pedidos, converse de forma útil e amigável.\n\n"
-
-    # Adiciona o histórico da conversa ao prompt
-    for role, text in conversation_history:
-        full_prompt += f"{role}: {text}\n"
-
-    # Adiciona a nova mensagem do usuário
-    full_prompt += f"Usuário: {user_message}\n"
-    full_prompt += "IA: "  # Para que a IA saiba que é a vez dela de responder
-
-    try:
-        response = model.generate_content(full_prompt)
-        ai_response_text = response.text
-
-        # Tenta parsear a resposta como JSON para ver se é uma questão
-        try:
-            questao_gerada = json.loads(ai_response_text)
-            # Se for um JSON de questão válido, retorna-o
-            if all(key in questao_gerada for key in ['enunciado', 'tipo', 'nivel', 'grau']):
-                return jsonify({'type': 'question', 'data': questao_gerada})
-        except json.JSONDecodeError:
-            # Se não for JSON, trata como uma resposta de chat normal
-            return jsonify({'type': 'chat', 'message': ai_response_text})
-
-    except Exception as e:
-        print(f"Erro na API do Gemini: {e}")
-        return jsonify({'type': 'chat', 'message': 'Desculpe, ocorreu um erro ao processar sua solicitação.'}), 500
-
-
 @app.route('/lixeira')
+@login_required
 def lixeira():
-    if 'user_id' not in session: return redirect(url_for('login'))
-    nome_completo = f"{session.get('user_nome', '')} {session.get('user_sobrenome', '')}".strip()
-    foto_perfil_url, lista_questoes_excluidas = None, []
+    nome_completo, foto_perfil_url = get_user_data()
+    lista_questoes_excluidas = []
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=DictCursor)
-        cursor.execute('SELECT foto_perfil FROM usuarios WHERE id = %s', (session['user_id'],))
-        user = cursor.fetchone()
-        if user and user.get('foto_perfil'):
-            data = user['foto_perfil']
-            foto_perfil_url = data.decode('utf-8') if isinstance(data, (bytes, bytearray)) else data
         cursor.execute("SELECT id, enunciado, tipo_questao FROM questoes WHERE is_active = FALSE ORDER BY id DESC")
         lista_questoes_excluidas = cursor.fetchall()
     except psycopg2.Error as e:
@@ -289,20 +397,16 @@ def lixeira():
 
 
 @app.route('/configuracoes')
+@login_required
 def configuracoes():
-    if 'user_id' not in session: return redirect(url_for('login'))
-    nome_completo = f"{session.get('user_nome', '')} {session.get('user_sobrenome', '')}".strip()
-    foto_perfil_url, user_data = None, {}
+    nome_completo, foto_perfil_url = get_user_data()
+    user_data = {}
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=DictCursor)
-        cursor.execute('SELECT nome, sobrenome, email, foto_perfil FROM usuarios WHERE id = %s', (session['user_id'],))
+        cursor.execute('SELECT nome, sobrenome, email FROM usuarios WHERE id = %s', (session['user_id'],))
         user_data = cursor.fetchone()
-
-        if user_data and user_data.get('foto_perfil'):
-            data = user_data['foto_perfil']
-            foto_perfil_url = data.decode('utf-8') if isinstance(data, (bytes, bytearray)) else data
     except psycopg2.Error as e:
         flash("Não foi possível carregar os seus dados.", "error")
         print(f"Erro em /configuracoes: {e}")
@@ -315,8 +419,8 @@ def configuracoes():
 
 
 @app.route('/update_profile', methods=['POST'])
+@login_required
 def update_profile():
-    if 'user_id' not in session: return redirect(url_for('login'))
     nome = request.form.get('nome')
     sobrenome = request.form.get('sobrenome')
     if not nome or not sobrenome:
@@ -344,8 +448,8 @@ def update_profile():
 
 
 @app.route('/change_password', methods=['POST'])
+@login_required
 def change_password():
-    if 'user_id' not in session: return redirect(url_for('login'))
     senha_atual = request.form.get('senha_atual')
     nova_senha = request.form.get('nova_senha')
     confirmar_senha = request.form.get('confirmar_senha')
@@ -380,8 +484,8 @@ def change_password():
 
 
 @app.route('/get_questao/<int:questao_id>')
+@login_required
 def get_questao(questao_id):
-    if 'user_id' not in session: return jsonify({'error': 'Não autenticado'}), 401
     conn = None
     try:
         conn = get_db_connection()
@@ -390,8 +494,8 @@ def get_questao(questao_id):
             "SELECT id, enunciado, tipo_questao, autor_id, nivel_dificuldade, grau_ensino FROM questoes WHERE id = %s",
             (questao_id,))
         questao = cursor.fetchone()
-        if not questao: return jsonify({'error': 'Questão não encontrada'}), 404
-
+        if not questao:
+            return jsonify({'error': 'Questão não encontrada'}), 404
         questao_dict = dict(questao)
         if questao['tipo_questao'] != 'DISCURSIVA':
             cursor.execute("SELECT texto_opcao, is_correta FROM opcoes WHERE questao_id = %s", (questao_id,))
@@ -408,14 +512,14 @@ def get_questao(questao_id):
 
 
 @app.route('/delete_questao/<int:questao_id>', methods=['POST'])
+@login_required
 def delete_questao(questao_id):
-    if 'user_id' not in session: return jsonify({'success': False, 'error': 'Não autenticado'}), 401
-    user_id = session['user_id']
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE questoes SET is_active = FALSE WHERE id = %s AND autor_id = %s", (questao_id, user_id))
+        cursor.execute("UPDATE questoes SET is_active = FALSE WHERE id = %s AND autor_id = %s",
+                       (questao_id, session['user_id']))
         if cursor.rowcount == 0:
             conn.rollback()
             return jsonify({'success': False, 'error': 'Questão não encontrada ou sem permissão.'}), 404
@@ -432,14 +536,14 @@ def delete_questao(questao_id):
 
 
 @app.route('/restore_questao/<int:questao_id>', methods=['POST'])
+@login_required
 def restore_questao(questao_id):
-    if 'user_id' not in session: return jsonify({'success': False, 'error': 'Não autenticado'}), 401
-    user_id = session['user_id']
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE questoes SET is_active = TRUE WHERE id = %s AND autor_id = %s", (questao_id, user_id))
+        cursor.execute("UPDATE questoes SET is_active = TRUE WHERE id = %s AND autor_id = %s",
+                       (questao_id, session['user_id']))
         if cursor.rowcount == 0:
             conn.rollback()
             return jsonify({'success': False, 'error': 'Questão não encontrada ou sem permissão.'}), 404
@@ -456,14 +560,13 @@ def restore_questao(questao_id):
 
 
 @app.route('/delete_permanently/<int:questao_id>', methods=['POST'])
+@login_required
 def delete_permanently(questao_id):
-    if 'user_id' not in session: return jsonify({'success': False, 'error': 'Não autenticado'}), 401
-    user_id = session['user_id']
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM questoes WHERE id = %s AND autor_id = %s", (questao_id, user_id))
+        cursor.execute("DELETE FROM questoes WHERE id = %s AND autor_id = %s", (questao_id, session['user_id']))
         if cursor.rowcount == 0:
             conn.rollback()
             return jsonify({'success': False, 'error': 'Questão não encontrada ou sem permissão.'}), 404
@@ -480,38 +583,28 @@ def delete_permanently(questao_id):
 
 
 @app.route('/edit_questao/<int:questao_id>', methods=['POST'])
+@login_required
 def edit_questao(questao_id):
-    if 'user_id' not in session: return redirect(url_for('login'))
-    user_id = session['user_id']
     enunciado = request.form.get('enunciado')
     nivel_dificuldade_form = request.form.get('nivel_dificuldade')
     grau_ensino = request.form.get('grau_ensino')
     if not all([enunciado, nivel_dificuldade_form]):
         flash("Enunciado e Nível de Dificuldade são obrigatórios.", "error")
         return redirect(url_for('banco_questoes'))
-
-    dificuldade_map = {
-        'FACIL': 'Fácil',
-        'MEDIO': 'Médio',
-        'DIFICIL': 'Difícil',
-        'MUITO DIFÍCIL': 'Muito Difícil'
-    }
+    dificuldade_map = {'FACIL': 'Fácil', 'MEDIO': 'Médio', 'DIFICIL': 'Difícil', 'MUITO_DIFICIL': 'Muito Difícil'}
     nivel_dificuldade_db = dificuldade_map.get(nivel_dificuldade_form.upper().replace("_", " "), nivel_dificuldade_form)
-
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=DictCursor)
         cursor.execute("SELECT autor_id, tipo_questao FROM questoes WHERE id = %s", (questao_id,))
         result = cursor.fetchone()
-        if not result or result['autor_id'] != user_id:
+        if not result or result['autor_id'] != session['user_id']:
             flash("Você não tem permissão para editar esta questão.", "error")
             return redirect(url_for('banco_questoes'))
-
         tipo_questao = result['tipo_questao']
         sql_update = "UPDATE questoes SET enunciado = %s, nivel_dificuldade = %s, grau_ensino = %s WHERE id = %s"
         cursor.execute(sql_update, (enunciado, nivel_dificuldade_db, grau_ensino, questao_id))
-
         cursor.execute("DELETE FROM opcoes WHERE questao_id = %s", (questao_id,))
         if tipo_questao in ['ESCOLHA_UNICA', 'MULTIPLA_ESCOLHA']:
             opcoes_texto = request.form.getlist('opcoes_texto[]')
@@ -535,37 +628,27 @@ def edit_questao(questao_id):
 
 
 @app.route('/add_questao', methods=['POST'])
+@login_required
 def add_questao():
-    if 'user_id' not in session: return redirect(url_for('login'))
     tipo_questao = request.form.get('tipo_questao')
     enunciado = request.form.get('enunciado')
     nivel_dificuldade_form = request.form.get('nivel_dificuldade')
     grau_ensino = request.form.get('grau_ensino')
-    autor_id = session['user_id']
     if not all([tipo_questao, enunciado, nivel_dificuldade_form]):
         flash("Todos os campos principais são obrigatórios.", "error")
         return redirect(url_for('cadastrar_questoes'))
-
-    dificuldade_map = {
-        'FACIL': 'Fácil',
-        'MEDIO': 'Médio',
-        'DIFICIL': 'Difícil',
-        'MUITO DIFÍCIL': 'Muito Difícil'
-    }
+    dificuldade_map = {'FACIL': 'Fácil', 'MEDIO': 'Médio', 'DIFICIL': 'Difícil', 'MUITO_DIFICIL': 'Muito Difícil'}
     nivel_dificuldade_db = dificuldade_map.get(nivel_dificuldade_form.upper().replace("_", " "), nivel_dificuldade_form)
-
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         sql_questao = """
                       INSERT INTO questoes (enunciado, tipo_questao, autor_id, nivel_dificuldade, grau_ensino)
-                      VALUES (%s, %s, %s, %s, %s) RETURNING id \
+                      VALUES (%s, %s, %s, %s, %s) RETURNING id
                       """
-        cursor.execute(sql_questao, (enunciado, tipo_questao, autor_id, nivel_dificuldade_db, grau_ensino))
-
+        cursor.execute(sql_questao, (enunciado, tipo_questao, session['user_id'], nivel_dificuldade_db, grau_ensino))
         questao_id = cursor.fetchone()[0]
-
         if tipo_questao in ['ESCOLHA_UNICA', 'MULTIPLA_ESCOLHA']:
             opcoes_texto = request.form.getlist('opcoes_texto[]')
             respostas_corretas_indices = request.form.getlist('respostas_corretas[]')
@@ -590,16 +673,16 @@ def add_questao():
 
 
 @app.route('/upload_foto', methods=['POST'])
+@login_required
 def upload_foto():
-    if 'user_id' not in session: return jsonify({'success': False, 'error': 'Não autenticado'}), 401
-    user_id = int(session['user_id'])
     image_data = request.get_json().get('image')
-    if not image_data: return jsonify({'success': False, 'error': 'Dados da imagem em falta'}), 400
+    if not image_data:
+        return jsonify({'success': False, 'error': 'Dados da imagem em falta'}), 400
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE usuarios SET foto_perfil = %s WHERE id = %s", (image_data, user_id))
+        cursor.execute("UPDATE usuarios SET foto_perfil = %s WHERE id = %s", (image_data, session['user_id']))
         if cursor.rowcount == 0:
             conn.rollback()
             return jsonify({'success': False, 'error': 'Utilizador não encontrado.'}), 404
@@ -619,7 +702,6 @@ def upload_foto():
 def login():
     if 'user_id' in session:
         return redirect(url_for('painel'))
-
     if request.method == 'POST':
         email = request.form.get('email')
         senha = request.form.get('senha')
@@ -630,19 +712,15 @@ def login():
             cursor.execute('SELECT id, nome, sobrenome, senha_hash, foto_perfil FROM usuarios WHERE email = %s',
                            (email,))
             user = cursor.fetchone()
-
             if user and bcrypt.check_password_hash(user['senha_hash'], senha):
                 session['user_id'] = user['id']
                 session['user_nome'] = user['nome']
                 session['user_sobrenome'] = user['sobrenome']
-
                 foto_perfil_data = user.get('foto_perfil')
                 foto_perfil_url = None
-                if foto_perfil_data and isinstance(foto_perfil_data, (bytes, bytearray)):
-                    foto_perfil_url = foto_perfil_data.decode('utf-8')
-                elif foto_perfil_data:
-                    foto_perfil_url = foto_perfil_data
-
+                if foto_perfil_data:
+                    foto_perfil_url = foto_perfil_data.decode('utf-8') if isinstance(foto_perfil_data, (bytes,
+                                                                                                        bytearray)) else foto_perfil_data
                 return jsonify({
                     'success': True,
                     'user': {
@@ -653,16 +731,13 @@ def login():
                 })
             else:
                 return jsonify({'success': False, 'message': 'Email ou senha inválidos.'}), 401
-
         except psycopg2.Error as e:
             print(f"Erro no login: {e}")
             return jsonify({'success': False, 'message': 'Erro ao conectar com o banco de dados.'}), 500
         finally:
             if conn:
-                if 'cursor' in locals() and cursor:
-                    cursor.close()
+                cursor.close()
                 conn.close()
-
     return render_template('login.html')
 
 
@@ -674,22 +749,17 @@ def logout():
 
 
 @app.route('/export_questoes', methods=['POST'])
+@login_required
 def export_questoes():
-    if 'user_id' not in session:
-        return jsonify({'error': 'Não autenticado'}), 401
-
     data = request.get_json()
     ids = data.get('ids')
     file_format = data.get('format')
-
     if not ids or not file_format:
         return jsonify({'error': 'IDs ou formato não fornecidos'}), 400
-
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=DictCursor)
-
         placeholders = ','.join(['%s'] * len(ids))
         sql_query = f"""
             SELECT q.id, q.enunciado, q.tipo_questao, o.texto_opcao, o.is_correta
@@ -701,7 +771,6 @@ def export_questoes():
         params = tuple(ids) + (session['user_id'],)
         cursor.execute(sql_query, params)
         results = cursor.fetchall()
-
         questoes = {}
         for row in results:
             questao_id = row['id']
@@ -717,17 +786,14 @@ def export_questoes():
                     "texto": row['texto_opcao'],
                     "is_correta": bool(row['is_correta'])
                 })
-
         questoes_lista = list(questoes.values())
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"questoes_{timestamp}.{file_format}"
-
         if file_format == 'json':
             output = json.dumps(questoes_lista, indent=4, ensure_ascii=False)
             mimetype = 'application/json'
             return Response(output, mimetype=mimetype,
                             headers={"Content-Disposition": f"attachment;filename={filename}"})
-
         elif file_format == 'txt':
             string_io = io.StringIO()
             for q in questoes_lista:
@@ -739,10 +805,8 @@ def export_questoes():
                         string_io.write(f"  {i + 1}. {op['texto']} {correta}\n")
                 string_io.write("\n" + "=" * 50 + "\n\n")
             output = string_io.getvalue()
-            mimetype = 'text/plain'
-            return Response(output, mimetype=mimetype,
+            return Response(output, mimetype='text/plain',
                             headers={"Content-Disposition": f"attachment;filename={filename}"})
-
         elif file_format == 'pdf':
             pdf = FPDF()
             pdf.add_page()
@@ -760,37 +824,27 @@ def export_questoes():
                         text = f"   {chr(97 + i)}) {op['texto']}{correta}"
                         pdf.multi_cell(0, 8, text.encode('latin-1', 'replace').decode('latin-1'))
                 pdf.ln(10)
-
             pdf_bytes = pdf.output(dest='S').encode('latin-1')
-            mimetype = 'application/pdf'
-            return Response(pdf_bytes, mimetype=mimetype,
+            return Response(pdf_bytes, mimetype='application/pdf',
                             headers={"Content-Disposition": f"attachment;filename={filename}"})
-
         elif file_format == 'docx':
             document = Document()
             for q_idx, q in enumerate(questoes_lista):
                 p_enunciado = document.add_paragraph()
                 p_enunciado.add_run(f"{q_idx + 1}. ").bold = True
                 p_enunciado.add_run(q['enunciado'])
-
                 if q['opcoes']:
                     for i, op in enumerate(q['opcoes']):
                         correta = " (Correta)" if op['is_correta'] else ""
-                        p_op = document.add_paragraph(f"   {chr(97 + i)}) {op['texto']}{correta}", style='List Bullet')
-
+                        document.add_paragraph(f"   {chr(97 + i)}) {op['texto']}{correta}", style='List Bullet')
                 document.add_paragraph()
-
             file_stream = io.BytesIO()
             document.save(file_stream)
             file_stream.seek(0)
-
-            mimetype = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-            return Response(file_stream.read(), mimetype=mimetype,
+            return Response(file_stream.read(),
+                            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                             headers={"Content-Disposition": f"attachment;filename={filename}"})
-
-        else:
-            return jsonify({'error': 'Formato inválido'}), 400
-
+        return jsonify({'error': 'Formato inválido'}), 400
     except psycopg2.Error as e:
         print(f"Erro na exportação: {e}")
         return jsonify({'error': 'Erro no servidor ao exportar'}), 500
