@@ -115,12 +115,10 @@ def insert_question_in_db(question_data):
                 cursor.execute(sql_opcao, (questao_id, opcao.get('texto_opcao'), bool(opcao.get('is_correta'))))
 
         conn.commit()
-        # ATUALIZAÇÃO 1: Retorna o ID da questão criada em vez de True
         return questao_id
     except psycopg2.Error as e:
         print(f"Erro ao inserir questão via IA: {e}")
         conn.rollback()
-        # ATUALIZAÇÃO 1: Retorna None em caso de falha
         return None
     finally:
         cursor.close()
@@ -161,7 +159,7 @@ def login_required(f):
     return decorated_function
 
 
-# --- ROTA DO CHAT COM IA (AJUSTADA) ---
+# --- ROTA DO CHAT COM IA ---
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def chat_ia():
@@ -232,10 +230,7 @@ def chat_ia():
         elif intent == "INSERT":
             pending_question = session.get('pending_question')
             if pending_question:
-                # ATUALIZAÇÃO 2: Salva o ID retornado pela função
                 new_question_id = insert_question_in_db(pending_question)
-
-                # ATUALIZAÇÃO 2: Verifica se o ID é válido e o usa na mensagem
                 if new_question_id:
                     message = f"Perfeito! A questão #{new_question_id} foi cadastrada com sucesso no seu banco de dados. ✅"
                     session.pop('pending_question', None)
@@ -261,7 +256,7 @@ def chat_ia():
                         'message': 'Desculpe, não consegui processar a resposta da IA. Poderia reformular seu pedido?'}), 500
 
 
-# --- ROTAS EXISTENTES (AJUSTADAS PARA O NOVO CAMPO) ---
+# --- ROTAS EXISTENTES ---
 @app.route('/')
 def index():
     if 'user_id' in session:
@@ -822,15 +817,15 @@ def export_questoes():
             pdf.set_font("Arial", size=12)
             for q_idx, q in enumerate(questoes_lista):
                 pdf.set_font("Arial", 'B', 14)
+                # ATUALIZAÇÃO: Remove o ID da questão
                 pdf.multi_cell(0, 10,
-                               f"{q_idx + 1}. (ID: {q['id']}) {q['enunciado']}".encode('latin-1', 'replace').decode(
-                                   'latin-1'))
+                               f"{q_idx + 1}. {q['enunciado']}".encode('latin-1', 'replace').decode('latin-1'))
                 pdf.set_font("Arial", size=12)
                 if q['opcoes']:
                     pdf.ln(5)
                     for i, op in enumerate(q['opcoes']):
-                        correta = " (Correta)" if op['is_correta'] else ""
-                        text = f"   {chr(97 + i)}) {op['texto']}{correta}"
+                        # ATUALIZAÇÃO: Remove a indicação de resposta correta
+                        text = f"   {chr(97 + i)}) {op['texto']}"
                         pdf.multi_cell(0, 8, text.encode('latin-1', 'replace').decode('latin-1'))
                 pdf.ln(10)
             pdf_bytes = pdf.output(dest='S').encode('latin-1')
