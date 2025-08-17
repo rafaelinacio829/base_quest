@@ -501,26 +501,41 @@ def get_questao(questao_id):
         if not questao:
             return jsonify({'error': 'Questão não encontrada'}), 404
         questao_dict = dict(questao)
-        # Converte a imagem para Base64 se existir
-        questao_dict['imagem_url'] = None
+        # Converte a imagem do enunciado para Base64 se existir
         if questao['imagem_url']:
             imagem_bytes = questao['imagem_url']
             mime_type = imghdr.what(io.BytesIO(imagem_bytes))
-
-            # Ajuste na lógica para garantir o tipo MIME correto, especialmente para PNG
             if mime_type:
                 mime_type = 'image/' + mime_type
             elif imagem_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
                 mime_type = 'image/png'
             else:
-                mime_type = 'image/jpeg'  # Fallback para outros tipos ou se a detecção falhar
-
+                mime_type = 'image/jpeg'
             questao_dict['imagem_url'] = f"data:{mime_type};base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
+        else:
+            questao_dict['imagem_url'] = None
 
         if questao['tipo_questao'] != 'DISCURSIVA':
-            cursor.execute("SELECT texto_opcao, is_correta FROM opcoes WHERE questao_id = %s", (questao_id,))
-            opcoes = cursor.fetchall()
-            questao_dict['opcoes'] = [dict(op) for op in opcoes]
+            cursor.execute("SELECT texto_opcao, is_correta, imagem_url FROM opcoes WHERE questao_id = %s",
+                           (questao_id,))
+            opcoes_raw = cursor.fetchall()
+            opcoes_list = []
+            for op in opcoes_raw:
+                op_dict = dict(op)
+                if op['imagem_url']:
+                    imagem_bytes = op['imagem_url']
+                    mime_type = imghdr.what(io.BytesIO(imagem_bytes))
+                    if mime_type:
+                        mime_type = 'image/' + mime_type
+                    elif imagem_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
+                        mime_type = 'image/png'
+                    else:
+                        mime_type = 'image/jpeg'
+                    op_dict['imagem_url'] = f"data:{mime_type};base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
+                else:
+                    op_dict['imagem_url'] = None
+                opcoes_list.append(op_dict)
+            questao_dict['opcoes'] = opcoes_list
         return jsonify(questao_dict)
     except psycopg2.Error as e:
         print(f"Erro em /get_questao: {e}")
@@ -610,10 +625,8 @@ def edit_questao(questao_id):
     grau_ensino = request.form.get('grau_ensino')
     area_conhecimento = request.form.get('area_conhecimento')
 
-    imagem = request.files.get('imagem')
-    imagem_dados = None
-    if imagem and imagem.filename:
-        imagem_dados = imagem.read()
+    imagem_questao = request.files.get('imagem')
+    imagem_questao_dados = imagem_questao.read() if imagem_questao and imagem_questao.filename else None
 
     if not all([enunciado, nivel_dificuldade_form]):
         flash("Enunciado e Nível de Dificuldade são obrigatórios.", "error")
@@ -641,17 +654,24 @@ def edit_questao(questao_id):
                      WHERE id = %s
                      """
         cursor.execute(sql_update,
-                       (enunciado, nivel_dificuldade_db, grau_ensino, area_conhecimento, imagem_dados, questao_id))
+                       (enunciado, nivel_dificuldade_db, grau_ensino, area_conhecimento, imagem_questao_dados,
+                        questao_id))
 
         cursor.execute("DELETE FROM opcoes WHERE questao_id = %s", (questao_id,))
+
         if tipo_questao in ['ESCOLHA_UNICA', 'MULTIPLA_ESCOLHA']:
             opcoes_texto = request.form.getlist('opcoes_texto[]')
+            opcoes_imagens = request.files.getlist('opcoes_imagem[]')
             respostas_corretas_indices = request.form.getlist('respostas_corretas[]')
+
             for i, texto_opcao in enumerate(opcoes_texto):
-                if not texto_opcao: continue
+                imagem_opcao_dados = opcoes_imagens[i].read() if opcoes_imagens and i < len(opcoes_imagens) and \
+                                                                 opcoes_imagens[i].filename else None
+                if not texto_opcao and not imagem_opcao_dados: continue
                 is_correta = str(i) in respostas_corretas_indices
-                sql_opcao = "INSERT INTO opcoes (questao_id, texto_opcao, is_correta) VALUES (%s, %s, %s)"
-                cursor.execute(sql_opcao, (questao_id, texto_opcao, is_correta))
+                sql_opcao = "INSERT INTO opcoes (questao_id, texto_opcao, is_correta, imagem_url) VALUES (%s, %s, %s, %s)"
+                cursor.execute(sql_opcao, (questao_id, texto_opcao, is_correta, imagem_opcao_dados))
+
         conn.commit()
         flash("Questão atualizada com sucesso!", "success")
     except (psycopg2.Error, ValueError) as e:
@@ -674,10 +694,8 @@ def add_questao():
     grau_ensino = request.form.get('grau_ensino')
     area_conhecimento = request.form.get('area_conhecimento')
 
-    imagem = request.files.get('imagem')
-    imagem_dados = None
-    if imagem and imagem.filename:
-        imagem_dados = imagem.read()
+    imagem_questao = request.files.get('imagem')
+    imagem_questao_dados = imagem_questao.read() if imagem_questao and imagem_questao.filename else None
 
     if not all([tipo_questao, enunciado, nivel_dificuldade_form]):
         flash("Todos os campos principais são obrigatórios.", "error")
@@ -694,17 +712,26 @@ def add_questao():
                       VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
                       """
         cursor.execute(sql_questao, (enunciado, tipo_questao, session['user_id'], nivel_dificuldade_db, grau_ensino,
-                                     area_conhecimento, imagem_dados))
+                                     area_conhecimento, imagem_questao_dados))
         questao_id = cursor.fetchone()[0]
+
         if tipo_questao in ['ESCOLHA_UNICA', 'MULTIPLA_ESCOLHA']:
             opcoes_texto = request.form.getlist('opcoes_texto[]')
+            opcoes_imagens = request.files.getlist('opcoes_imagem[]')
             respostas_corretas_indices = request.form.getlist('respostas_corretas[]')
-            if not opcoes_texto: raise ValueError("Questões de múltipla escolha precisam de opções.")
+
+            if not opcoes_texto and not opcoes_imagens:
+                raise ValueError("Questões de múltipla escolha precisam de pelo menos uma opção.")
+
             for i, texto_opcao in enumerate(opcoes_texto):
-                if not texto_opcao: raise ValueError(f"O texto da opção {i + 1} não pode estar vazio.")
+                imagem_opcao_dados = opcoes_imagens[i].read() if opcoes_imagens and i < len(opcoes_imagens) and \
+                                                                 opcoes_imagens[i].filename else None
+                if not texto_opcao and not imagem_opcao_dados: continue
+
                 is_correta = str(i) in respostas_corretas_indices
-                sql_opcao = "INSERT INTO opcoes (questao_id, texto_opcao, is_correta) VALUES (%s, %s, %s)"
-                cursor.execute(sql_opcao, (questao_id, texto_opcao, is_correta))
+                sql_opcao = "INSERT INTO opcoes (questao_id, texto_opcao, is_correta, imagem_url) VALUES (%s, %s, %s, %s)"
+                cursor.execute(sql_opcao, (questao_id, texto_opcao, is_correta, imagem_opcao_dados))
+
         conn.commit()
         flash("Questão cadastrada com sucesso!", "success")
     except (psycopg2.Error, ValueError) as e:
@@ -808,9 +835,9 @@ def export_questoes():
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=DictCursor)
         placeholders = ','.join(['%s'] * len(ids))
-        # Consulta atualizada para incluir a imagem_url
         sql_query = f"""
-            SELECT q.id, q.enunciado, q.tipo_questao, q.imagem_url, o.texto_opcao, o.is_correta
+            SELECT q.id, q.enunciado, q.tipo_questao, q.imagem_url AS questao_imagem, 
+                   o.texto_opcao, o.is_correta, o.imagem_url AS opcao_imagem
             FROM questoes q
             LEFT JOIN opcoes o ON q.id = o.questao_id
             WHERE q.id IN ({placeholders}) AND q.autor_id = %s
@@ -827,19 +854,19 @@ def export_questoes():
                     "id": row['id'],
                     "enunciado": row['enunciado'],
                     "tipo_questao": row['tipo_questao'],
-                    "imagem_url": row['imagem_url'],
+                    "imagem_url": row['questao_imagem'],
                     "opcoes": []
                 }
-            if row['texto_opcao']:
+            if row['texto_opcao'] or row['opcao_imagem']:
                 questoes[questao_id]['opcoes'].append({
                     "texto": row['texto_opcao'],
-                    "is_correta": bool(row['is_correta'])
+                    "is_correta": bool(row['is_correta']),
+                    "imagem_url": row['opcao_imagem']
                 })
         questoes_lista = list(questoes.values())
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"questoes_{timestamp}.{file_format}"
         if file_format == 'json':
-            # Adiciona a imagem como Base64 no JSON
             for q in questoes_lista:
                 if q['imagem_url']:
                     imagem_bytes = q['imagem_url']
@@ -848,27 +875,39 @@ def export_questoes():
                         q[
                             'imagem_url'] = f"data:image/{mime_type};base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
                     else:
-                        q['imagem_url'] = f"data:image/jpeg;base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
-                else:
-                    q['imagem_url'] = None
+                        q['imagem_url'] = f"data:image/png;base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
+                if q['opcoes']:
+                    for op in q['opcoes']:
+                        if op['imagem_url']:
+                            imagem_bytes = op['imagem_url']
+                            mime_type = imghdr.what(io.BytesIO(imagem_bytes))
+                            if mime_type:
+                                op[
+                                    'imagem_url'] = f"data:image/{mime_type};base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
+                            else:
+                                op[
+                                    'imagem_url'] = f"data:image/png;base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
             output = json.dumps(questoes_lista, indent=4, ensure_ascii=False)
             mimetype = 'application/json'
             return Response(output, mimetype=mimetype,
                             headers={"Content-Disposition": f"attachment;filename={filename}"})
         elif file_format == 'txt':
             string_io = io.StringIO()
-            for q in questoes_lista:
-                string_io.write(f"ID: {q['id']}\nEnunciado: {q['enunciado']}\nTipo: {q['tipo_questao']}\n")
+            for q_idx, q in enumerate(questoes_lista):
+                string_io.write(f"Questão #{q_idx + 1} - ID: {q['id']}\n")
+                string_io.write(f"Enunciado: {q['enunciado']}\n")
                 if q['imagem_url']:
-                    string_io.write("IMAGEM: Anexada (Representação Base64 abaixo)\n")
-                    imagem_bytes = q['imagem_url']
-                    base64_img = base64.b64encode(imagem_bytes).decode('utf-8')
-                    string_io.write(f"  [Imagem Base64: {base64_img[:50]}...]\n")  # Exibe apenas uma parte
+                    string_io.write("IMAGEM DA QUESTÃO: Anexada (Representação Base64 abaixo)\n")
+                    base64_img = base64.b64encode(q['imagem_url']).decode('utf-8')
+                    string_io.write(f"  [Imagem Base64: {base64_img[:50]}...]\n")
                 if q['opcoes']:
                     string_io.write("Opções:\n")
                     for i, op in enumerate(q['opcoes']):
                         correta = "[CORRETA]" if op['is_correta'] else ""
-                        string_io.write(f"  {i + 1}. {op['texto']} {correta}\n")
+                        string_io.write(f"  {chr(97 + i)}) {op['texto']} {correta}\n")
+                        if op['imagem_url']:
+                            base64_img = base64.b64encode(op['imagem_url']).decode('utf-8')
+                            string_io.write(f"    - Imagem: [Imagem Base64: {base64_img[:50]}...]\n")
                 string_io.write("\n" + "=" * 50 + "\n\n")
             output = string_io.getvalue()
             return Response(output, mimetype='text/plain',
@@ -876,30 +915,17 @@ def export_questoes():
         elif file_format == 'pdf':
             pdf = FPDF()
             pdf.add_page()
-            pdf.set_font("Arial", size=12)
             for q_idx, q in enumerate(questoes_lista):
                 pdf.set_font("Arial", 'B', 14)
                 pdf.multi_cell(0, 10,
                                f"{q_idx + 1}. {q['enunciado']}".encode('latin-1', 'replace').decode('latin-1'))
                 if q['imagem_url']:
-                    imagem_bytes = q['imagem_url']
                     try:
-                        temp_img = io.BytesIO(imagem_bytes)
-                        # A FPDF pode ter problemas com a detecção automática, forçamos o tipo.
-                        mime_type = imghdr.what(temp_img)
-                        if not mime_type and imagem_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
-                            mime_type = 'png'
-                        if mime_type:
-                            pdf.image(temp_img, w=pdf.w / 2, type=mime_type)
-                        else:
-                            pdf.multi_cell(0, 10,
-                                           "  [IMAGEM NÃO PODE SER EXPORTADA]".encode('latin-1', 'replace').decode(
-                                               'latin-1'))
+                        temp_img = io.BytesIO(q['imagem_url'])
+                        pdf.image(temp_img, w=pdf.w / 2)
                         pdf.ln(5)
                     except Exception as e:
-                        print(f"Erro ao adicionar imagem ao PDF: {e}")
-                        pdf.multi_cell(0, 10, "  [IMAGEM NÃO PODE SER EXPORTADA]".encode('latin-1', 'replace').decode(
-                            'latin-1'))
+                        print(f"Erro ao adicionar imagem da questão ao PDF: {e}")
 
                 pdf.set_font("Arial", size=12)
                 if q['opcoes']:
@@ -907,7 +933,13 @@ def export_questoes():
                     for i, op in enumerate(q['opcoes']):
                         text = f"   {chr(97 + i)}) {op['texto']}"
                         pdf.multi_cell(0, 8, text.encode('latin-1', 'replace').decode('latin-1'))
-                pdf.ln(10)
+                        if op['imagem_url']:
+                            try:
+                                temp_img = io.BytesIO(op['imagem_url'])
+                                pdf.image(temp_img, x=20, w=pdf.w / 4)
+                            except Exception as e:
+                                print(f"Erro ao adicionar imagem da opção ao PDF: {e}")
+                    pdf.ln(5)
             pdf_bytes = pdf.output(dest='S').encode('latin-1')
             return Response(pdf_bytes, mimetype='application/pdf',
                             headers={"Content-Disposition": f"attachment;filename={filename}"})
@@ -922,13 +954,20 @@ def export_questoes():
                         image_stream = io.BytesIO(q['imagem_url'])
                         document.add_picture(image_stream, width=Inches(4))
                     except Exception as e:
-                        print(f"Erro ao adicionar imagem ao DOCX: {e}")
-                        document.add_paragraph("  [IMAGEM NÃO PODE SER EXPORTADA]")
+                        print(f"Erro ao adicionar imagem da questão ao DOCX: {e}")
+                        document.add_paragraph("  [IMAGEM DA QUESTÃO NÃO PODE SER EXPORTADA]")
 
                 if q['opcoes']:
                     for i, op in enumerate(q['opcoes']):
-                        text = f"   {chr(97 + i)}) {op['texto']}"
-                        document.add_paragraph(text)
+                        p_opcao = document.add_paragraph()
+                        p_opcao.add_run(f"   {chr(97 + i)}) {op['texto']}")
+                        if op['imagem_url']:
+                            try:
+                                image_stream = io.BytesIO(op['imagem_url'])
+                                document.add_picture(image_stream, width=Inches(2))
+                            except Exception as e:
+                                print(f"Erro ao adicionar imagem da opção ao DOCX: {e}")
+                                document.add_paragraph("    [IMAGEM DA OPÇÃO NÃO PODE SER EXPORTADA]")
                 document.add_paragraph()
             file_stream = io.BytesIO()
             document.save(file_stream)

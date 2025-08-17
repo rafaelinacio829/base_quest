@@ -250,15 +250,50 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         let optionCount = 0;
-        const addOptionField = (text = '', isCorrect = false) => {
+        const addOptionField = (text = '', isCorrect = false, imageUrl = '') => {
             if (!optionsContainer || !tipoQuestaoSelect) return;
             optionCount++;
             const inputType = (tipoQuestaoSelect.value === 'ESCOLHA_UNICA') ? 'radio' : 'checkbox';
             const newOption = document.createElement('div');
             newOption.className = 'form-group dynamic-option';
-            newOption.innerHTML = `<label for="opcao_texto_${optionCount}">Opção ${String.fromCharCode(64 + optionCount)}</label><div class="option-input-group"><input type="text" name="opcoes_texto[]" id="opcao_texto_${optionCount}" placeholder="Texto da opção" value="${text}" required><label class="correct-answer-label"><input type="${inputType}" name="respostas_corretas[]" value="${optionCount - 1}" ${isCorrect ? 'checked' : ''}><span>Correta?</span></label><button type="button" class="remove-option-btn">&times;</button></div>`;
+            newOption.innerHTML = `
+                <label for="opcao_texto_${optionCount}">Opção ${String.fromCharCode(64 + optionCount)}</label>
+                <div class="option-input-group">
+                    <input type="text" name="opcoes_texto[]" id="opcao_texto_${optionCount}" placeholder="Texto da opção" value="${text}" required>
+                    <label class="correct-answer-label">
+                        <input type="${inputType}" name="respostas_corretas[]" value="${optionCount - 1}" ${isCorrect ? 'checked' : ''}>
+                        <span>Correta?</span>
+                    </label>
+                    <button type="button" class="remove-option-btn">&times;</button>
+                </div>
+                <div class="option-image-group">
+                    <label>
+                        Imagem da Opção (opcional)
+                        <input type="file" name="opcoes_imagem[]" class="option-image-input" accept="image/jpeg, image/png, image/gif">
+                    </label>
+                    <div class="option-image-preview" style="display: ${imageUrl ? 'block' : 'none'};">
+                        <img src="${imageUrl}" alt="Pré-visualização da imagem" style="max-width: 150px; height: auto; border-radius: 8px; margin-top: 5px;">
+                    </div>
+                </div>
+            `;
             optionsContainer.appendChild(newOption);
             newOption.querySelector('.remove-option-btn')?.addEventListener('click', () => newOption.remove());
+            newOption.querySelector('.option-image-input')?.addEventListener('change', function() {
+                const file = this.files[0];
+                const previewDiv = this.parentNode.nextElementSibling;
+                const previewImage = previewDiv.querySelector('img');
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        previewImage.src = e.target.result;
+                        previewDiv.style.display = 'block';
+                    }
+                    reader.readAsDataURL(file);
+                } else {
+                    previewDiv.style.display = 'none';
+                    previewImage.src = '#';
+                }
+            });
         };
         const updateFormUI = () => {
             if (!optionsContainer || !tipoQuestaoSelect) return;
@@ -370,7 +405,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 switchToViewMode();
                 if (modalQuestionTitle) modalQuestionTitle.textContent = `#${currentQuestionData.id}: ${currentQuestionData.enunciado || ''}`;
 
-                // Exibe ou esconde a imagem no modal
+                // Exibe ou esconde a imagem do enunciado no modal
                 if (currentQuestionData.imagem_url && modalQuestionImageContainer && modalQuestionImage) {
                     modalQuestionImage.src = currentQuestionData.imagem_url;
                     modalQuestionImageContainer.style.display = 'block';
@@ -378,7 +413,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     modalQuestionImageContainer.style.display = 'none';
                 }
 
-                // ATUALIZAÇÃO: Monta a string de tags incluindo a área de conhecimento
                 if (modalTags) {
                     const nivel = currentQuestionData.nivel_dificuldade || 'desconhecido';
                     let tagsHTML = `<span class="tag tag-${nivel.toLowerCase().replace(' ', '_')}">${nivel.replace('_', ' ')}</span>`;
@@ -393,15 +427,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (modalOptionsList) {
                     modalOptionsList.innerHTML = '';
-                    if (Array.isArray(currentQuestionData.opcoes) && currentQuestionData.opcoes.length > 0) { currentQuestionData.opcoes.forEach(op => { const li = document.createElement('li'); li.textContent = op.texto_opcao; if (op.is_correta) li.classList.add('correct'); modalOptionsList.appendChild(li); }); }
-                    else if (currentQuestionData.tipo_questao === 'DISCURSIVA') { modalOptionsList.innerHTML = '<li>Questão discursiva não possui opções.</li>'; }
-                    else { modalOptionsList.innerHTML = '<li>Não há opções para exibir.</li>'; }
+                    if (Array.isArray(currentQuestionData.opcoes) && currentQuestionData.opcoes.length > 0) {
+                        currentQuestionData.opcoes.forEach(op => {
+                            const li = document.createElement('li');
+                            if (op.imagem_url) {
+                                li.innerHTML = `<img src="${op.imagem_url}" alt="Opção" style="max-width: 100px; max-height: 100px;">`;
+                            }
+                            if (op.texto_opcao) {
+                                li.innerHTML += `<p>${op.texto_opcao}</p>`;
+                            }
+                            if (op.is_correta) {
+                                li.classList.add('correct');
+                            }
+                            modalOptionsList.appendChild(li);
+                        });
+                    } else if (currentQuestionData.tipo_questao === 'DISCURSIVA') {
+                        modalOptionsList.innerHTML = '<li>Questão discursiva não possui opções.</li>';
+                    } else {
+                        modalOptionsList.innerHTML = '<li>Não há opções para exibir.</li>';
+                    }
                 }
                 if (modalDeleteBtn) modalDeleteBtn.dataset.id = questionId;
                 if (modalEditBtn) modalEditBtn.dataset.id = questionId;
                 if (modalGoToQuestionBtn) modalGoToQuestionBtn.dataset.id = questionId;
                 questionModalOverlay.classList.add('open');
-            } catch (error) { console.error("Erro ao abrir modal:", error); showFlashMessage(error.message, 'error'); }
+            } catch (error) {
+                console.error("Erro ao abrir modal:", error);
+                showFlashMessage(error.message, 'error');
+            }
         };
 
         const closeModal = () => { if (questionModalOverlay) { questionModalOverlay.classList.remove('open'); setTimeout(switchToViewMode, 300); } };
@@ -412,16 +465,39 @@ document.addEventListener('DOMContentLoaded', () => {
             modalEditContent.style.display = 'block';
 
             let optionsHTML = '';
+            let optionCount = 0;
             if (currentQuestionData.tipo_questao !== 'DISCURSIVA' && Array.isArray(currentQuestionData.opcoes)) {
                 const inputType = currentQuestionData.tipo_questao === 'ESCOLHA_UNICA' ? 'radio' : 'checkbox';
                 currentQuestionData.opcoes.forEach((opcao, index) => {
                     const isChecked = opcao.is_correta ? 'checked' : '';
                     const optionText = opcao.texto_opcao || '';
-                    optionsHTML += `<div class="form-group dynamic-option"><div class="option-input-group"><input type="text" name="opcoes_texto[]" value="${optionText}" required><label class="correct-answer-label"><input type="${inputType}" name="respostas_corretas[]" value="${index}" ${isChecked}><span>Correta?</span></label></div></div>`;
+                    const optionImage = opcao.imagem_url || '';
+                    optionCount++;
+                    optionsHTML += `
+                        <div class="form-group dynamic-option">
+                            <label>Opção ${String.fromCharCode(64 + optionCount)}</label>
+                            <div class="option-input-group">
+                                <input type="text" name="opcoes_texto[]" value="${optionText}" placeholder="Texto da opção">
+                                <label class="correct-answer-label">
+                                    <input type="${inputType}" name="respostas_corretas[]" value="${index}" ${isChecked}>
+                                    <span>Correta?</span>
+                                </label>
+                                <button type="button" class="remove-option-btn">&times;</button>
+                            </div>
+                            <div class="option-image-group">
+                                <label>
+                                    Imagem da Opção (opcional)
+                                    <input type="file" name="opcoes_imagem[]" class="option-image-input" accept="image/jpeg, image/png, image/gif">
+                                </label>
+                                <div class="option-image-preview" style="display: ${optionImage ? 'block' : 'none'};">
+                                    <img src="${optionImage}" alt="Pré-visualização da imagem" style="max-width: 150px; height: auto; border-radius: 8px; margin-top: 5px;">
+                                </div>
+                            </div>
+                        </div>
+                    `;
                 });
             }
 
-            // ATUALIZAÇÃO: Adiciona o campo de edição da Área de Conhecimento no modal
             modalEditContent.innerHTML = `
                 <form id="editQuestionForm" action="/edit_questao/${currentQuestionData.id}" method="POST" enctype="multipart/form-data">
                     <div class="form-group"><label>Enunciado</label><textarea name="enunciado" rows="4" required>${currentQuestionData.enunciado || ''}</textarea></div>
@@ -441,9 +517,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         <input type="text" name="area_conhecimento" value="${currentQuestionData.area_conhecimento || ''}" placeholder="Ex: Matemática, Biologia, História">
                     </div>
                     <input type="hidden" name="tipo_questao" value="${currentQuestionData.tipo_questao}">
-                    ${optionsHTML}
+                    <div id="editOptionsContainer">${optionsHTML}</div>
+                    <button type="button" id="addEditOptionBtn" class="secondary-btn">Adicionar Opção</button>
                     <div class="modal-footer"><button type="button" class="secondary-btn" id="cancelEditBtn">Cancelar</button><button type="submit" class="submit-btn">Salvar Alterações</button></div>
                 </form>`;
+
+            document.getElementById('addEditOptionBtn')?.addEventListener('click', () => addOptionField('', false, '', 'edit'));
+            document.getElementById('editOptionsContainer')?.addEventListener('click', (event) => {
+                if (event.target.classList.contains('remove-option-btn')) {
+                    event.target.closest('.dynamic-option').remove();
+                }
+            });
 
             const editQuestionForm = document.getElementById('editQuestionForm');
             editQuestionForm?.addEventListener('submit', async (e) => {
@@ -471,7 +555,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // Pré-visualização de imagem no modal de edição
             const imagemEditInput = document.getElementById('imagem_edit');
             const previewEditImg = document.getElementById('previewEditImg');
             if (imagemEditInput && previewEditImg) {
