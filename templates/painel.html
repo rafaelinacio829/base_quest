@@ -90,6 +90,45 @@
                     {% endif %}
                 {% endwith %}
 
+                <div class="search-filters-container">
+                    <form action="{{ url_for('banco_questoes') }}" method="GET" class="search-filters-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="search_enunciado">Enunciado</label>
+                                <input type="text" id="search_enunciado" name="q" placeholder="Buscar por enunciado..." value="{{ search_query }}">
+                            </div>
+                            <div class="form-group">
+                                <label for="search_nivel">Nível</label>
+                                <select id="search_nivel" name="nivel">
+                                    <option value="">Todos</option>
+                                    <option value="Fácil" {% if nivel_dificuldade == 'Fácil' %}selected{% endif %}>Fácil</option>
+                                    <option value="Médio" {% if nivel_dificuldade == 'Médio' %}selected{% endif %}>Médio</option>
+                                    <option value="Difícil" {% if nivel_dificuldade == 'Difícil' %}selected{% endif %}>Difícil</option>
+                                    <option value="Muito Difícil" {% if nivel_dificuldade == 'Muito Difícil' %}selected{% endif %}>Muito Difícil</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="search_grau">Grau de Ensino</label>
+                                <select id="search_grau" name="grau">
+                                    <option value="">Todos</option>
+                                    <option value="Ensino Fundamental I" {% if grau_ensino == 'Ensino Fundamental I' %}selected{% endif %}>Ensino Fundamental I</option>
+                                    <option value="Ensino Fundamental II" {% if grau_ensino == 'Ensino Fundamental II' %}selected{% endif %}>Ensino Fundamental II</option>
+                                    <option value="Ensino Médio" {% if grau_ensino == 'Ensino Médio' %}selected{% endif %}>Ensino Médio</option>
+                                    <option value="Ensino Superior" {% if grau_ensino == 'Ensino Superior' %}selected{% endif %}>Ensino Superior</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="search_area">Área de Conhecimento</label>
+                                <input type="text" id="search_area" name="area" placeholder="Ex: Biologia, História..." value="{{ area_conhecimento }}">
+                            </div>
+                        </div>
+                        <div class="form-buttons" style="justify-content: flex-end;">
+                            <button type="submit" class="primary-btn">Buscar</button>
+                        </div>
+                    </form>
+                </div>
                 <div class="selection-actions" id="selectionActions">
                     <span id="selectionCount">0 questões selecionadas</span>
                     <div class="action-buttons">
@@ -104,8 +143,8 @@
                 </div>
 
                 <div class="panel-header">
-                    {% if search_query %}
-                        <h3>Resultados da busca por "{{ search_query }}"</h3>
+                    {% if search_query or nivel_dificuldade or grau_ensino or area_conhecimento %}
+                        <h3>Resultados da busca</h3>
                     {% else %}
                         <h3>Questões Cadastradas</h3>
                     {% endif %}

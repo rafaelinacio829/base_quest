@@ -11,8 +11,7 @@ from flask import (Flask, render_template, request, redirect, url_for,
 from flask_bcrypt import Bcrypt
 from dotenv import load_dotenv
 from functools import wraps
-import imghdr
-import mimetypes
+import magic
 
 # NOVAS IMPORTAÇÕES PARA PDF E DOCX
 from fpdf import FPDF
@@ -72,6 +71,24 @@ def clean_and_parse_json(response_text):
     except json.JSONDecodeError as e:
         print(f"Erro ao decodificar JSON da IA: {e}")
         print(f"Texto recebido: {clean_text}")
+        return None
+
+
+def _process_image_data_to_base64(imagem_bytes):
+    """Processa dados binários de imagem para uma string Base64 com tipo MIME."""
+    if not imagem_bytes or not isinstance(imagem_bytes, (bytes, bytearray)):
+        return None
+    try:
+        mime_type = magic.from_buffer(imagem_bytes, mime=True)
+        if mime_type:
+            return f"data:{mime_type};base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
+        else:
+            return None
+    except magic.MagicException as e:
+        print(f"Erro ao detectar tipo de imagem: {e}")
+        return None
+    except Exception as e:
+        print(f"Erro inesperado ao processar a imagem: {e}")
         return None
 
 
@@ -220,7 +237,7 @@ def chat_ia():
             question_json = clean_and_parse_json(response.text)
 
             if not question_json:
-                raise ValueError("A IA não retornou um JSON de questão válido.")
+                raise ValueError("A IA não retornou um JSON de intenção válido.")
 
             session['pending_question'] = question_json
 
@@ -309,18 +326,37 @@ def search_questoes():
 @login_required
 def banco_questoes():
     nome_completo, foto_perfil_url = get_user_data()
+
     search_query = request.args.get('q', '')
+    nivel_dificuldade = request.args.get('nivel', '')
+    grau_ensino = request.args.get('grau', '')
+    area_conhecimento = request.args.get('area', '')
+
     lista_questoes = []
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=DictCursor)
+
         sql_query = "SELECT id, enunciado, tipo_questao, nivel_dificuldade, grau_ensino, area_conhecimento FROM questoes WHERE is_active = TRUE"
         params = []
+
         if search_query:
-            sql_query += " AND (enunciado ILIKE %s OR nivel_dificuldade::text ILIKE %s OR grau_ensino ILIKE %s OR area_conhecimento ILIKE %s)"
-            like_term = f"%{search_query}%"
-            params.extend([like_term, like_term, like_term, like_term])
+            sql_query += " AND enunciado ILIKE %s"
+            params.append(f"%{search_query}%")
+
+        if nivel_dificuldade:
+            sql_query += " AND nivel_dificuldade = %s"
+            params.append(nivel_dificuldade)
+
+        if grau_ensino:
+            sql_query += " AND grau_ensino = %s"
+            params.append(grau_ensino)
+
+        if area_conhecimento:
+            sql_query += " AND area_conhecimento ILIKE %s"
+            params.append(f"%{area_conhecimento}%")
+
         sql_query += " ORDER BY id DESC"
         cursor.execute(sql_query, tuple(params))
         lista_questoes = cursor.fetchall()
@@ -331,9 +367,16 @@ def banco_questoes():
         if conn:
             cursor.close()
             conn.close()
-    return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url,
+
+    return render_template('painel.html',
+                           nome_completo=nome_completo,
+                           foto_perfil_url=foto_perfil_url,
                            view='banco_questoes',
-                           questoes=lista_questoes, search_query=search_query)
+                           questoes=lista_questoes,
+                           search_query=search_query,
+                           nivel_dificuldade=nivel_dificuldade,
+                           grau_ensino=grau_ensino,
+                           area_conhecimento=area_conhecimento)
 
 
 @app.route('/cadastrar_questoes')
@@ -455,7 +498,7 @@ def update_profile():
 @login_required
 def change_password():
     senha_atual = request.form.get('senha_atual')
-    nova_senha = request.form.get('nova_senha')
+    nova_senha = request.form.form.get('nova_senha')
     confirmar_senha = request.form.get('confirmar_senha')
     if not all([senha_atual, nova_senha, confirmar_senha]):
         flash("Todos os campos de senha são obrigatórios.", "error")
@@ -501,19 +544,8 @@ def get_questao(questao_id):
         if not questao:
             return jsonify({'error': 'Questão não encontrada'}), 404
         questao_dict = dict(questao)
-        # Converte a imagem do enunciado para Base64 se existir
-        if questao['imagem_url']:
-            imagem_bytes = questao['imagem_url']
-            mime_type = imghdr.what(io.BytesIO(imagem_bytes))
-            if mime_type:
-                mime_type = 'image/' + mime_type
-            elif imagem_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
-                mime_type = 'image/png'
-            else:
-                mime_type = 'image/jpeg'
-            questao_dict['imagem_url'] = f"data:{mime_type};base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
-        else:
-            questao_dict['imagem_url'] = None
+        # Converte a imagem do enunciado para Base64 se existir e não for vazia
+        questao_dict['imagem_url'] = _process_image_data_to_base64(questao.get('imagem_url'))
 
         if questao['tipo_questao'] != 'DISCURSIVA':
             cursor.execute("SELECT texto_opcao, is_correta, imagem_url FROM opcoes WHERE questao_id = %s",
@@ -522,18 +554,7 @@ def get_questao(questao_id):
             opcoes_list = []
             for op in opcoes_raw:
                 op_dict = dict(op)
-                if op['imagem_url']:
-                    imagem_bytes = op['imagem_url']
-                    mime_type = imghdr.what(io.BytesIO(imagem_bytes))
-                    if mime_type:
-                        mime_type = 'image/' + mime_type
-                    elif imagem_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
-                        mime_type = 'image/png'
-                    else:
-                        mime_type = 'image/jpeg'
-                    op_dict['imagem_url'] = f"data:{mime_type};base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
-                else:
-                    op_dict['imagem_url'] = None
+                op_dict['imagem_url'] = _process_image_data_to_base64(op.get('imagem_url'))
                 opcoes_list.append(op_dict)
             questao_dict['opcoes'] = opcoes_list
         return jsonify(questao_dict)
@@ -868,25 +889,10 @@ def export_questoes():
         filename = f"questoes_{timestamp}.{file_format}"
         if file_format == 'json':
             for q in questoes_lista:
-                if q['imagem_url']:
-                    imagem_bytes = q['imagem_url']
-                    mime_type = imghdr.what(io.BytesIO(imagem_bytes))
-                    if mime_type:
-                        q[
-                            'imagem_url'] = f"data:image/{mime_type};base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
-                    else:
-                        q['imagem_url'] = f"data:image/png;base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
+                q['imagem_url'] = _process_image_data_to_base64(q['imagem_url'])
                 if q['opcoes']:
                     for op in q['opcoes']:
-                        if op['imagem_url']:
-                            imagem_bytes = op['imagem_url']
-                            mime_type = imghdr.what(io.BytesIO(imagem_bytes))
-                            if mime_type:
-                                op[
-                                    'imagem_url'] = f"data:image/{mime_type};base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
-                            else:
-                                op[
-                                    'imagem_url'] = f"data:image/png;base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
+                        op['imagem_url'] = _process_image_data_to_base64(op['imagem_url'])
             output = json.dumps(questoes_lista, indent=4, ensure_ascii=False)
             mimetype = 'application/json'
             return Response(output, mimetype=mimetype,

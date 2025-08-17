@@ -167,7 +167,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 searchResultsList.innerHTML = '';
                 if (results.length > 0) {
                     results.forEach(questao => {
-                        // ATUALIZAÇÃO: Adiciona a tag da área de conhecimento aos resultados da busca rápida
                         const tagsHTML = `<span class="tag tag-${questao.nivel_dificuldade.toLowerCase()}">${questao.nivel_dificuldade.replace('_', ' ')}</span>` +
                                        `${questao.grau_ensino ? `<span class="tag tag-grau">${questao.grau_ensino}</span>` : ''}` +
                                        `${questao.area_conhecimento ? `<span class="tag tag-area">${questao.area_conhecimento}</span>` : ''}`;
@@ -306,7 +305,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const tipo = tipoQuestaoSelect.value;
             const nivel = nivelDificuldadeSelect.value;
             const grau = grauEnsinoSelect.value;
-            // ATUALIZAÇÃO: Pega a área de conhecimento do form para enviar para a IA
             const area = document.getElementById('area_conhecimento')?.value || 'Conhecimentos Gerais';
 
             try {
@@ -406,10 +404,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (modalQuestionTitle) modalQuestionTitle.textContent = `#${currentQuestionData.id}: ${currentQuestionData.enunciado || ''}`;
 
                 // Exibe ou esconde a imagem do enunciado no modal
-                if (currentQuestionData.imagem_url && modalQuestionImageContainer && modalQuestionImage) {
+                if (currentQuestionData.imagem_url) {
                     modalQuestionImage.src = currentQuestionData.imagem_url;
                     modalQuestionImageContainer.style.display = 'block';
-                } else if (modalQuestionImageContainer) {
+                } else {
                     modalQuestionImageContainer.style.display = 'none';
                 }
 
@@ -573,7 +571,12 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('cancelEditBtn')?.addEventListener('click', switchToViewMode);
         };
 
-        const switchToViewMode = () => { if (modalViewContent && modalEditContent) { modalViewContent.style.display = 'block'; modalEditContent.style.display = 'none'; modalEditContent.innerHTML = ''; } };
+        const switchToViewMode = () => {
+            if (!modalViewContent || !modalEditContent) return;
+            modalViewContent.style.display = 'block';
+            modalEditContent.style.display = 'none';
+            modalEditContent.innerHTML = '';
+        };
 
         const handleDeleteQuestion = async (questionId) => {
             if (!confirm(`Tem certeza que deseja mover a questão #${questionId} para a lixeira?`)) return;
@@ -585,9 +588,11 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         document.body.addEventListener('click', async (event) => {
-            const target = event.target, questionItem = target.closest('.question-item');
+            const target = event.target;
+            const questionItem = target.closest('.question-item');
             if (questionItem && !target.closest('.question-checkbox, .delete-btn, .restore-btn, .perm-delete-btn, a')) {
-                const questionId = questionItem.dataset.id, context = questionItem.dataset.context;
+                const questionId = questionItem.dataset.id;
+                const context = questionItem.dataset.context;
                 if (questionId) openModal(questionId, context);
             }
             const deleteBtn = target.closest('.delete-btn:not(.modal-delete-btn)');
