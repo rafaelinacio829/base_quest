@@ -2,6 +2,7 @@
 import os
 import io
 import json
+import base64
 from datetime import datetime
 import psycopg2
 from psycopg2.extras import DictCursor
@@ -10,11 +11,13 @@ from flask import (Flask, render_template, request, redirect, url_for,
 from flask_bcrypt import Bcrypt
 from dotenv import load_dotenv
 from functools import wraps
+import imghdr
+import mimetypes
 
 # NOVAS IMPORTAÇÕES PARA PDF E DOCX
 from fpdf import FPDF
 from docx import Document
-from docx.shared import Pt
+from docx.shared import Pt, Inches
 
 # NOVA IMPORTAÇÃO PARA O GEMINI
 import google.generativeai as genai
@@ -22,6 +25,7 @@ import google.generativeai as genai
 load_dotenv()
 
 app = Flask(__name__)
+# Aumenta o limite de upload para suportar imagens maiores
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.secret_key = os.environ.get('SECRET_KEY')
 bcrypt = Bcrypt(app)
@@ -491,12 +495,28 @@ def get_questao(questao_id):
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=DictCursor)
         cursor.execute(
-            "SELECT id, enunciado, tipo_questao, autor_id, nivel_dificuldade, grau_ensino, area_conhecimento FROM questoes WHERE id = %s",
+            "SELECT id, enunciado, tipo_questao, autor_id, nivel_dificuldade, grau_ensino, area_conhecimento, imagem_url FROM questoes WHERE id = %s",
             (questao_id,))
         questao = cursor.fetchone()
         if not questao:
             return jsonify({'error': 'Questão não encontrada'}), 404
         questao_dict = dict(questao)
+        # Converte a imagem para Base64 se existir
+        questao_dict['imagem_url'] = None
+        if questao['imagem_url']:
+            imagem_bytes = questao['imagem_url']
+            mime_type = imghdr.what(io.BytesIO(imagem_bytes))
+
+            # Ajuste na lógica para garantir o tipo MIME correto, especialmente para PNG
+            if mime_type:
+                mime_type = 'image/' + mime_type
+            elif imagem_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
+                mime_type = 'image/png'
+            else:
+                mime_type = 'image/jpeg'  # Fallback para outros tipos ou se a detecção falhar
+
+            questao_dict['imagem_url'] = f"data:{mime_type};base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
+
         if questao['tipo_questao'] != 'DISCURSIVA':
             cursor.execute("SELECT texto_opcao, is_correta FROM opcoes WHERE questao_id = %s", (questao_id,))
             opcoes = cursor.fetchall()
@@ -589,6 +609,12 @@ def edit_questao(questao_id):
     nivel_dificuldade_form = request.form.get('nivel_dificuldade')
     grau_ensino = request.form.get('grau_ensino')
     area_conhecimento = request.form.get('area_conhecimento')
+
+    imagem = request.files.get('imagem')
+    imagem_dados = None
+    if imagem and imagem.filename:
+        imagem_dados = imagem.read()
+
     if not all([enunciado, nivel_dificuldade_form]):
         flash("Enunciado e Nível de Dificuldade são obrigatórios.", "error")
         return redirect(url_for('banco_questoes'))
@@ -604,8 +630,19 @@ def edit_questao(questao_id):
             flash("Você não tem permissão para editar esta questão.", "error")
             return redirect(url_for('banco_questoes'))
         tipo_questao = result['tipo_questao']
-        sql_update = "UPDATE questoes SET enunciado = %s, nivel_dificuldade = %s, grau_ensino = %s, area_conhecimento = %s WHERE id = %s"
-        cursor.execute(sql_update, (enunciado, nivel_dificuldade_db, grau_ensino, area_conhecimento, questao_id))
+
+        sql_update = """
+                     UPDATE questoes \
+                     SET enunciado         = %s, \
+                         nivel_dificuldade = %s, \
+                         grau_ensino       = %s, \
+                         area_conhecimento = %s, \
+                         imagem_url        = %s \
+                     WHERE id = %s
+                     """
+        cursor.execute(sql_update,
+                       (enunciado, nivel_dificuldade_db, grau_ensino, area_conhecimento, imagem_dados, questao_id))
+
         cursor.execute("DELETE FROM opcoes WHERE questao_id = %s", (questao_id,))
         if tipo_questao in ['ESCOLHA_UNICA', 'MULTIPLA_ESCOLHA']:
             opcoes_texto = request.form.getlist('opcoes_texto[]')
@@ -636,6 +673,12 @@ def add_questao():
     nivel_dificuldade_form = request.form.get('nivel_dificuldade')
     grau_ensino = request.form.get('grau_ensino')
     area_conhecimento = request.form.get('area_conhecimento')
+
+    imagem = request.files.get('imagem')
+    imagem_dados = None
+    if imagem and imagem.filename:
+        imagem_dados = imagem.read()
+
     if not all([tipo_questao, enunciado, nivel_dificuldade_form]):
         flash("Todos os campos principais são obrigatórios.", "error")
         return redirect(url_for('cadastrar_questoes'))
@@ -647,11 +690,11 @@ def add_questao():
         cursor = conn.cursor()
         sql_questao = """
                       INSERT INTO questoes (enunciado, tipo_questao, autor_id, nivel_dificuldade, grau_ensino, \
-                                            area_conhecimento)
-                      VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+                                            area_conhecimento, imagem_url)
+                      VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
                       """
         cursor.execute(sql_questao, (enunciado, tipo_questao, session['user_id'], nivel_dificuldade_db, grau_ensino,
-                                     area_conhecimento))
+                                     area_conhecimento, imagem_dados))
         questao_id = cursor.fetchone()[0]
         if tipo_questao in ['ESCOLHA_UNICA', 'MULTIPLA_ESCOLHA']:
             opcoes_texto = request.form.getlist('opcoes_texto[]')
@@ -765,8 +808,9 @@ def export_questoes():
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=DictCursor)
         placeholders = ','.join(['%s'] * len(ids))
+        # Consulta atualizada para incluir a imagem_url
         sql_query = f"""
-            SELECT q.id, q.enunciado, q.tipo_questao, o.texto_opcao, o.is_correta
+            SELECT q.id, q.enunciado, q.tipo_questao, q.imagem_url, o.texto_opcao, o.is_correta
             FROM questoes q
             LEFT JOIN opcoes o ON q.id = o.questao_id
             WHERE q.id IN ({placeholders}) AND q.autor_id = %s
@@ -783,6 +827,7 @@ def export_questoes():
                     "id": row['id'],
                     "enunciado": row['enunciado'],
                     "tipo_questao": row['tipo_questao'],
+                    "imagem_url": row['imagem_url'],
                     "opcoes": []
                 }
             if row['texto_opcao']:
@@ -794,6 +839,18 @@ def export_questoes():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"questoes_{timestamp}.{file_format}"
         if file_format == 'json':
+            # Adiciona a imagem como Base64 no JSON
+            for q in questoes_lista:
+                if q['imagem_url']:
+                    imagem_bytes = q['imagem_url']
+                    mime_type = imghdr.what(io.BytesIO(imagem_bytes))
+                    if mime_type:
+                        q[
+                            'imagem_url'] = f"data:image/{mime_type};base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
+                    else:
+                        q['imagem_url'] = f"data:image/jpeg;base64,{base64.b64encode(imagem_bytes).decode('utf-8')}"
+                else:
+                    q['imagem_url'] = None
             output = json.dumps(questoes_lista, indent=4, ensure_ascii=False)
             mimetype = 'application/json'
             return Response(output, mimetype=mimetype,
@@ -802,6 +859,11 @@ def export_questoes():
             string_io = io.StringIO()
             for q in questoes_lista:
                 string_io.write(f"ID: {q['id']}\nEnunciado: {q['enunciado']}\nTipo: {q['tipo_questao']}\n")
+                if q['imagem_url']:
+                    string_io.write("IMAGEM: Anexada (Representação Base64 abaixo)\n")
+                    imagem_bytes = q['imagem_url']
+                    base64_img = base64.b64encode(imagem_bytes).decode('utf-8')
+                    string_io.write(f"  [Imagem Base64: {base64_img[:50]}...]\n")  # Exibe apenas uma parte
                 if q['opcoes']:
                     string_io.write("Opções:\n")
                     for i, op in enumerate(q['opcoes']):
@@ -819,6 +881,26 @@ def export_questoes():
                 pdf.set_font("Arial", 'B', 14)
                 pdf.multi_cell(0, 10,
                                f"{q_idx + 1}. {q['enunciado']}".encode('latin-1', 'replace').decode('latin-1'))
+                if q['imagem_url']:
+                    imagem_bytes = q['imagem_url']
+                    try:
+                        temp_img = io.BytesIO(imagem_bytes)
+                        # A FPDF pode ter problemas com a detecção automática, forçamos o tipo.
+                        mime_type = imghdr.what(temp_img)
+                        if not mime_type and imagem_bytes.startswith(b'\x89PNG\r\n\x1a\n'):
+                            mime_type = 'png'
+                        if mime_type:
+                            pdf.image(temp_img, w=pdf.w / 2, type=mime_type)
+                        else:
+                            pdf.multi_cell(0, 10,
+                                           "  [IMAGEM NÃO PODE SER EXPORTADA]".encode('latin-1', 'replace').decode(
+                                               'latin-1'))
+                        pdf.ln(5)
+                    except Exception as e:
+                        print(f"Erro ao adicionar imagem ao PDF: {e}")
+                        pdf.multi_cell(0, 10, "  [IMAGEM NÃO PODE SER EXPORTADA]".encode('latin-1', 'replace').decode(
+                            'latin-1'))
+
                 pdf.set_font("Arial", size=12)
                 if q['opcoes']:
                     pdf.ln(5)
@@ -835,6 +917,14 @@ def export_questoes():
                 p_enunciado = document.add_paragraph()
                 p_enunciado.add_run(f"{q_idx + 1}. ").bold = True
                 p_enunciado.add_run(q['enunciado'])
+                if q['imagem_url']:
+                    try:
+                        image_stream = io.BytesIO(q['imagem_url'])
+                        document.add_picture(image_stream, width=Inches(4))
+                    except Exception as e:
+                        print(f"Erro ao adicionar imagem ao DOCX: {e}")
+                        document.add_paragraph("  [IMAGEM NÃO PODE SER EXPORTADA]")
+
                 if q['opcoes']:
                     for i, op in enumerate(q['opcoes']):
                         text = f"   {chr(97 + i)}) {op['texto']}"

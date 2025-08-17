@@ -151,7 +151,7 @@
                         {% endfor %}
                     {% endif %}
                 {% endwith %}
-                <form class="question-form" action="{{ url_for('add_questao') }}" method="POST">
+                <form class="question-form" action="{{ url_for('add_questao') }}" method="POST" enctype="multipart/form-data">
                     <div class="form-group">
                         <label for="tipo_questao">Tipo de Questão</label>
                         <select name="tipo_questao" id="tipo_questao" required>
@@ -164,6 +164,14 @@
                     <div class="form-group">
                         <label for="enunciado">Enunciado da Questão</label>
                         <textarea name="enunciado" id="enunciado" rows="4" required></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="imagem">Anexar Imagem (opcional)</label>
+                        <input type="file" name="imagem" id="imagem" accept="image/jpeg, image/png, image/gif">
+                        <div id="imagePreview" style="margin-top: 10px; display: none;">
+                            <img id="previewImg" src="#" alt="Pré-visualização da imagem" style="max-width: 100%; height: auto; border-radius: 8px;">
+                        </div>
                     </div>
 
                     <div class="form-row">
@@ -308,6 +316,9 @@
                 <button class="modal-close-btn" id="modalCloseBtn">&times;</button>
                 <div id="modalViewContent">
                     <h3 id="modalQuestionTitle"></h3>
+                    <div class="question-image-container" id="modalQuestionImageContainer" style="text-align: center; margin-bottom: 20px; display: none;">
+                        <img id="modalQuestionImage" src="" alt="Imagem da Questão" style="max-width: 100%; height: auto; border-radius: 8px;">
+                    </div>
                     <div class="question-tags" id="modalTags"></div>
                     <ul class="modal-options-list" id="modalOptionsList"></ul>
                 </div>

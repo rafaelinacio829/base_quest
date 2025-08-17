@@ -201,6 +201,54 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===================================
     const setupQuestionForm = () => {
         const tipoQuestaoSelect = document.getElementById('tipo_questao'), optionsContainer = document.getElementById('optionsContainer'), addOptionBtn = document.getElementById('addOptionBtn'), addOptionWrapper = document.getElementById('addOptionWrapper'), generateWithAIBtn = document.getElementById('generateWithAIBtn'), enunciadoInput = document.getElementById('enunciado'), nivelDificuldadeSelect = document.getElementById('nivel_dificuldade'), grauEnsinoSelect = document.getElementById('grau_ensino');
+        const imagemInput = document.getElementById('imagem');
+        const imagePreviewContainer = document.getElementById('imagePreview');
+        const previewImg = document.getElementById('previewImg');
+        const addQuestionForm = document.querySelector('.question-form');
+
+        // Listener para pré-visualização da imagem
+        imagemInput?.addEventListener('change', function() {
+            const file = this.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewImg.src = e.target.result;
+                    imagePreviewContainer.style.display = 'block';
+                }
+                reader.readAsDataURL(file);
+            } else {
+                imagePreviewContainer.style.display = 'none';
+                previewImg.src = '#';
+            }
+        });
+
+        // Altera o tipo de submissão para suportar FormData (com arquivos)
+        addQuestionForm?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(addQuestionForm);
+
+            try {
+                const response = await fetch(addQuestionForm.action, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const html = await response.text();
+                const newDoc = new DOMParser().parseFromString(html, 'text/html');
+                const flashMessage = newDoc.querySelector('.flash-message');
+                if (flashMessage) {
+                    showFlashMessage(flashMessage.textContent, flashMessage.classList.contains('success') ? 'success' : 'error');
+                }
+
+                if (response.ok) {
+                    window.location.href = newDoc.URL;
+                }
+            } catch (error) {
+                console.error("Erro ao enviar formulário:", error);
+                showFlashMessage('Erro de conexão. Tente novamente.', 'error');
+            }
+        });
+
         let optionCount = 0;
         const addOptionField = (text = '', isCorrect = false) => {
             if (!optionsContainer || !tipoQuestaoSelect) return;
@@ -301,6 +349,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===================================
     const setupQuestionModal = () => {
         const questionModalOverlay = document.getElementById('questionModalOverlay'), modalCloseBtn = document.getElementById('modalCloseBtn'), modalViewContent = document.getElementById('modalViewContent'), modalEditContent = document.getElementById('modalEditContent'), modalQuestionTitle = document.getElementById('modalQuestionTitle'), modalOptionsList = document.getElementById('modalOptionsList'), modalEditBtn = document.getElementById('modalEditBtn'), modalDeleteBtn = document.getElementById('modalDeleteBtn'), modalTags = document.getElementById('modalTags'), defaultFooterButtons = document.getElementById('defaultFooterButtons'), searchFooterButtons = document.getElementById('searchFooterButtons'), modalCancelBtn = document.getElementById('modalCancelBtn'), modalGoToQuestionBtn = document.getElementById('modalGoToQuestionBtn');
+        const modalQuestionImageContainer = document.getElementById('modalQuestionImageContainer');
+        const modalQuestionImage = document.getElementById('modalQuestionImage');
 
         const openModal = async (questionId, context = 'default') => {
             try {
@@ -319,6 +369,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentQuestionData = await response.json();
                 switchToViewMode();
                 if (modalQuestionTitle) modalQuestionTitle.textContent = `#${currentQuestionData.id}: ${currentQuestionData.enunciado || ''}`;
+
+                // Exibe ou esconde a imagem no modal
+                if (currentQuestionData.imagem_url && modalQuestionImageContainer && modalQuestionImage) {
+                    modalQuestionImage.src = currentQuestionData.imagem_url;
+                    modalQuestionImageContainer.style.display = 'block';
+                } else if (modalQuestionImageContainer) {
+                    modalQuestionImageContainer.style.display = 'none';
+                }
 
                 // ATUALIZAÇÃO: Monta a string de tags incluindo a área de conhecimento
                 if (modalTags) {
@@ -365,20 +423,69 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // ATUALIZAÇÃO: Adiciona o campo de edição da Área de Conhecimento no modal
             modalEditContent.innerHTML = `
-                <form id="editQuestionForm" action="/edit_questao/${currentQuestionData.id}" method="POST">
+                <form id="editQuestionForm" action="/edit_questao/${currentQuestionData.id}" method="POST" enctype="multipart/form-data">
                     <div class="form-group"><label>Enunciado</label><textarea name="enunciado" rows="4" required>${currentQuestionData.enunciado || ''}</textarea></div>
+                    <div class="form-group">
+                        <label for="imagem_edit">Anexar Nova Imagem (opcional)</label>
+                        <input type="file" name="imagem" id="imagem_edit" accept="image/jpeg, image/png, image/gif">
+                        <div id="imageEditPreview" style="margin-top: 10px;">
+                            ${currentQuestionData.imagem_url ? `<img id="previewEditImg" src="${currentQuestionData.imagem_url}" alt="Imagem atual" style="max-width: 100%; height: auto; border-radius: 8px;">` : 'Nenhuma imagem atual.'}
+                        </div>
+                    </div>
                     <div class="form-row">
                         <div class="form-group"><label>Nível de Dificuldade</label><select name="nivel_dificuldade" required><option value="FACIL" ${currentQuestionData.nivel_dificuldade === 'Fácil' ? 'selected' : ''}>Fácil</option><option value="MEDIO" ${currentQuestionData.nivel_dificuldade === 'Médio' ? 'selected' : ''}>Médio</option><option value="DIFICIL" ${currentQuestionData.nivel_dificuldade === 'Difícil' ? 'selected' : ''}>Difícil</option><option value="MUITO_DIFICIL" ${currentQuestionData.nivel_dificuldade === 'Muito Difícil' ? 'selected' : ''}>Muito Difícil</option></select></div>
                         <div class="form-group"><label>Grau de Ensino</label><input type="text" name="grau_ensino" value="${currentQuestionData.grau_ensino || ''}" placeholder="Ex: Ensino Médio"></div>
                     </div>
                     <div class="form-group">
                         <label>Área de Conhecimento</label>
-                        <input type="text" name="area_conhecimento" value="${currentQuestionData.area_conhecimento || ''}" placeholder="Ex: Matemática, Biologia">
+                        <input type="text" name="area_conhecimento" value="${currentQuestionData.area_conhecimento || ''}" placeholder="Ex: Matemática, Biologia, História">
                     </div>
                     <input type="hidden" name="tipo_questao" value="${currentQuestionData.tipo_questao}">
                     ${optionsHTML}
                     <div class="modal-footer"><button type="button" class="secondary-btn" id="cancelEditBtn">Cancelar</button><button type="submit" class="submit-btn">Salvar Alterações</button></div>
                 </form>`;
+
+            const editQuestionForm = document.getElementById('editQuestionForm');
+            editQuestionForm?.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const formData = new FormData(editQuestionForm);
+                try {
+                    const response = await fetch(editQuestionForm.action, {
+                        method: 'POST',
+                        body: formData,
+                    });
+
+                    const html = await response.text();
+                    const newDoc = new DOMParser().parseFromString(html, 'text/html');
+                    const flashMessage = newDoc.querySelector('.flash-message');
+                    if (flashMessage) {
+                        showFlashMessage(flashMessage.textContent, flashMessage.classList.contains('success') ? 'success' : 'error');
+                    }
+
+                    if (response.ok) {
+                        window.location.href = newDoc.URL;
+                    }
+                } catch (error) {
+                    console.error("Erro ao enviar formulário de edição:", error);
+                    showFlashMessage('Erro de conexão. Tente novamente.', 'error');
+                }
+            });
+
+            // Pré-visualização de imagem no modal de edição
+            const imagemEditInput = document.getElementById('imagem_edit');
+            const previewEditImg = document.getElementById('previewEditImg');
+            if (imagemEditInput && previewEditImg) {
+                imagemEditInput.addEventListener('change', function() {
+                    const file = this.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            previewEditImg.src = e.target.result;
+                        }
+                        reader.readAsDataURL(file);
+                    }
+                });
+            }
 
             document.getElementById('cancelEditBtn')?.addEventListener('click', switchToViewMode);
         };
