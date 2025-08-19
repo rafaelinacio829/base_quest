@@ -76,8 +76,16 @@ def clean_and_parse_json(response_text):
 
 def _process_image_data_to_base64(imagem_bytes):
     """Processa dados binários de imagem para uma string Base64 com tipo MIME."""
-    if not imagem_bytes or not isinstance(imagem_bytes, (bytes, bytearray)):
+    if not imagem_bytes:
         return None
+
+    # Converte memoryview para bytes, se necessário
+    if isinstance(imagem_bytes, memoryview):
+        imagem_bytes = bytes(imagem_bytes)
+
+    if not isinstance(imagem_bytes, (bytes, bytearray)):
+        return None
+
     try:
         mime_type = magic.from_buffer(imagem_bytes, mime=True)
         if mime_type:
