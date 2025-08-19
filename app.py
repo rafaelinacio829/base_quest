@@ -38,7 +38,7 @@ generation_config = {
     "top_k": 1,
     "max_output_tokens": 2048,
 }
-model = genai.GenerativeModel(model_name="gemini-2.0-flash", generation_config=generation_config)
+model = genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config=generation_config)
 
 
 def get_db_connection():
@@ -188,16 +188,17 @@ def login_required(f):
     return decorated_function
 
 
-# --- ROTA DO CHAT COM IA ---
+# --- ROTA DO CHAT COM IA (CORRIGIDA E PERSONALIZADA) ---
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def chat_ia():
     data = request.get_json()
     user_message = data.get('message')
+    user_nome = session.get('user_nome', 'usuário') # Pega o nome do usuário da sessão
 
     pending_action = "Sim" if 'pending_question' in session else "Não"
     intent_prompt = f"""
-    Analise a mensagem do usuário para determinar a intenção. As intenções possíveis são: SEARCH, CREATE, INSERT, CHAT.
+    Analise a mensagem do usuário chamado '{user_nome}' para determinar a intenção. As intenções possíveis são: SEARCH, CREATE, INSERT, CHAT.
     - Se o usuário quer procurar, pesquisar ou buscar, a intenção é SEARCH.
     - Se o usuário quer criar ou gerar uma questão, a intenção é CREATE.
     - Se uma questão foi recém-criada (pending_action='Sim') e a mensagem do usuário é afirmativa (sim, pode, cadastre, confirme), a intenção é INSERT.
@@ -223,7 +224,7 @@ def chat_ia():
         if intent == "SEARCH":
             results = search_questions_in_db(topic)
             if results:
-                message = f"Encontrei {len(results)} questões sobre '{topic}':\n"
+                message = f"Encontrei {len(results)} questões sobre '{topic}', {user_nome}:\n"
                 for res in results:
                     message += f"- #{res['id']}: {res['enunciado'][:80]}...\n"
             else:
@@ -245,11 +246,11 @@ def chat_ia():
             question_json = clean_and_parse_json(response.text)
 
             if not question_json:
-                raise ValueError("A IA não retornou um JSON de intenção válido.")
+                raise ValueError("A IA não retornou um JSON de questão válido.")
 
             session['pending_question'] = question_json
 
-            message = f"Criei a seguinte questão sobre '{topic}':\n\n"
+            message = f"Criei a seguinte questão sobre '{topic}', {user_nome}:\n\n"
             message += f"**Enunciado:** {question_json.get('enunciado', 'N/A')}\n"
             for i, opt in enumerate(question_json.get('opcoes', [])):
                 message += f"{i + 1}. {opt.get('texto_opcao', 'N/A')}\n"
@@ -261,7 +262,7 @@ def chat_ia():
             if pending_question:
                 new_question_id = insert_question_in_db(pending_question)
                 if new_question_id:
-                    message = f"Perfeito! A questão #{new_question_id} foi cadastrada com sucesso no seu banco de dados. ✅"
+                    message = f"Perfeito, {user_nome}! A questão #{new_question_id} foi cadastrada com sucesso no seu banco de dados. ✅"
                     session.pop('pending_question', None)
                 else:
                     message = "Ocorreu um erro ao tentar cadastrar a questão. Por favor, tente novamente."
@@ -272,8 +273,9 @@ def chat_ia():
         else:  # CHAT
             chat_prompt = f"""
             Você é um assistente de IA amigável e prestativo para um banco de questões escolar.
+            O nome do usuário é {user_nome}. Chame-o pelo nome sempre que for apropriado para tornar a conversa mais pessoal e amigável.
             Suas funções são: pesquisar, criar e cadastrar questões.
-            Responda à seguinte mensagem do usuário de forma conversacional: "{topic}"
+            Responda à seguinte mensagem do usuário de forma conversacional: "{user_message}"
             """
             response = model.generate_content(chat_prompt)
             return jsonify({'type': 'chat', 'message': response.text})
@@ -399,7 +401,12 @@ def cadastrar_questoes():
 @login_required
 def chat_page():
     nome_completo, foto_perfil_url = get_user_data()
-    return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url, view='chat_ia')
+    user_nome = session.get('user_nome', '') # Pega o nome para a mensagem de boas vindas
+    return render_template('painel.html',
+                           nome_completo=nome_completo,
+                           foto_perfil_url=foto_perfil_url,
+                           view='chat_ia',
+                           user_nome=user_nome) # Passa para o template
 
 
 @app.route('/generate_questao', methods=['POST'])
@@ -506,7 +513,7 @@ def update_profile():
 @login_required
 def change_password():
     senha_atual = request.form.get('senha_atual')
-    nova_senha = request.form.form.get('nova_senha')
+    nova_senha = request.form.get('nova_senha') # CORRIGIDO
     confirmar_senha = request.form.get('confirmar_senha')
     if not all([senha_atual, nova_senha, confirmar_senha]):
         flash("Todos os campos de senha são obrigatórios.", "error")
@@ -679,7 +686,7 @@ def edit_questao(questao_id):
                          nivel_dificuldade = %s, \
                          grau_ensino       = %s, \
                          area_conhecimento = %s, \
-                         imagem_url        = %s \
+                         imagem_url        = COALESCE(%s, imagem_url) \
                      WHERE id = %s
                      """
         cursor.execute(sql_update,
@@ -865,7 +872,7 @@ def export_questoes():
         cursor = conn.cursor(cursor_factory=DictCursor)
         placeholders = ','.join(['%s'] * len(ids))
         sql_query = f"""
-            SELECT q.id, q.enunciado, q.tipo_questao, q.imagem_url AS questao_imagem, 
+            SELECT q.id, q.enunciado, q.tipo_questao, q.imagem_url AS questao_imagem,
                    o.texto_opcao, o.is_correta, o.imagem_url AS opcao_imagem
             FROM questoes q
             LEFT JOIN opcoes o ON q.id = o.questao_id
