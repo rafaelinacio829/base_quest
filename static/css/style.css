@@ -735,126 +735,63 @@ html, body {
     border-left-color: var(--btn-success-bg);
     font-weight: 600;
 }
-/* ==================================== */
-/* === ESTILOS MELHORADOS DO CHAT IA === */
-/* ==================================== */
 
-.chat-panel {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    /* Ajusta o padding para dar mais espaço ao container do chat */
-    padding: 100px 20px 20px 20px;
+/* Ajustes para o modal de visualização da questão */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 9999;
 }
 
-#chat-container {
-    width: 100%;
-    max-width: 800px;
-    height: 75vh;
-    display: flex;
-    flex-direction: column;
-    background: var(--color-card-transparent);
-    border-radius: 20px;
-    box-shadow: var(--shadow-lg);
-    border: 1px solid var(--color-border);
-    overflow: hidden;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+.modal-content {
+  background: var(--bg-panel, #fff);
+  max-width: 90vw; /* não ultrapassar largura da janela */
+  width: 800px; /* largura ideal em telas maiores */
+  max-height: 90vh; /* limitar altura para caber na janela */
+  overflow: auto; /* permitir scroll interno */
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+  box-sizing: border-box;
 }
 
-#chat-messages {
-    flex-grow: 1;
-    padding: 20px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+/* Garante que qualquer imagem dentro do modal se ajuste corretamente */
+.modal-content img,
+.modal-content .image-preview-ia img,
+#modalQuestionImage,
+.modal-content .question-image {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0.5rem auto;
 }
 
-/* Estilo base para todas as mensagens */
-.ai-message, .user-message {
-    padding: 12px 18px;
-    border-radius: 18px;
-    max-width: 75%;
-    line-height: 1.5;
-    word-wrap: break-word;
-    /* Adiciona transição para suavizar a aparição */
-    opacity: 0;
-    transform: translateY(10px);
-    animation: fadeUp 0.3s ease forwards;
+/* Borda e espaçamento interno para a área da questão */
+.modal-content .question-wrapper,
+.modal-content .question-body {
+  border: 1px solid rgba(0,0,0,0.06);
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--bg-card, #fafafa);
 }
 
-@keyframes fadeUp {
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+/* Footer do modal fixo ao fundo do conteúdo com espaçamento */
+.modal-content .modal-footer {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
-/* Mensagem da IA (esquerda) */
-.ai-message {
-    background-color: var(--color-bg-light-variant);
-    color: var(--color-text);
-    align-self: flex-start;
-    border-bottom-left-radius: 4px;
-}
-
-/* Mensagem do Usuário (direita) */
-.user-message {
-    background-color: var(--accent-color);
-    color: white;
-    align-self: flex-end;
-    border-bottom-right-radius: 4px;
-}
-
-/* Indicador "Digitando..." */
-.ai-message.typing {
-    color: var(--color-text-secondary);
-    font-style: italic;
-}
-
-#chat-form {
-    display: flex;
-    gap: 10px;
-    padding: 15px;
-    border-top: 1px solid var(--color-border);
-    background-color: var(--color-card-transparent);
-}
-
-#chat-input {
-    flex-grow: 1;
-    border: none;
-    background-color: var(--color-bg-light-variant);
-    color: var(--color-text);
-    padding: 12px 20px;
-    border-radius: 25px;
-    font-size: 1rem;
-    outline: none;
-    transition: box-shadow var(--transition-fast);
-}
-
-#chat-input:focus {
-    box-shadow: 0 0 0 3px rgba(128, 90, 213, 0.25);
-}
-
-#chat-send-btn {
-    border: none;
-    background-color: var(--accent-color);
-    color: white;
-    font-size: 1.2rem;
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    cursor: pointer;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background-color var(--transition-medium), transform var(--transition-fast);
-}
-
-#chat-send-btn:hover {
-    background-color: var(--accent-color-hover);
-    transform: scale(1.05);
+/* Em telas muito pequenas, reduzir padding e largura */
+@media (max-width: 480px) {
+  .modal-content {
+    width: calc(100vw - 24px);
+    padding: 12px;
+    border-radius: 6px;
+  }
 }
