@@ -692,8 +692,105 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // ===================================
-    // INICIALIZAÇÃO DE TODOS OS MÓDUTOS
+    // MÓDULO: CHAT COM IA (COMPORTAMENTO)
     // ===================================
+    const setupChatModule = () => {
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+        const chatMessages = document.getElementById('chat-messages');
+        const chatSendBtn = document.getElementById('chat-send-btn');
+        if (!chatForm || !chatInput || !chatMessages || !chatSendBtn) return;
+
+        const createMessageBubble = (textOrHtml, type = 'ai', isHtml = false) => {
+            const wrapper = document.createElement('div');
+            wrapper.className = `message ${type === 'ai' ? 'ai-message' : 'user-message'}`;
+
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble';
+            if (isHtml) bubble.innerHTML = textOrHtml;
+            else bubble.textContent = textOrHtml;
+
+            wrapper.appendChild(bubble);
+
+            const meta = document.createElement('span');
+            meta.className = 'msg-meta';
+            const now = new Date();
+            meta.textContent = now.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+            wrapper.appendChild(meta);
+            return wrapper;
+        };
+
+        const makeTypingIndicator = () => {
+            const el = document.createElement('div');
+            el.className = 'message ai-message typing-indicator';
+            el.innerHTML = `<div class="bubble"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>`;
+            return el;
+        };
+
+        const scrollToBottom = () => { chatMessages.scrollTop = chatMessages.scrollHeight; };
+
+        let waiting = false;
+        const sendMessage = async (messageText) => {
+            if (!messageText || waiting) return;
+            waiting = true;
+            // render user message
+            const userBubble = createMessageBubble(messageText, 'user', false);
+            chatMessages.appendChild(userBubble);
+            scrollToBottom();
+
+            // show typing indicator
+            const typing = makeTypingIndicator();
+            chatMessages.appendChild(typing);
+            scrollToBottom();
+
+            chatInput.value = '';
+            chatInput.disabled = true;
+            chatSendBtn.disabled = true;
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: messageText })
+                });
+
+                const data = await res.json();
+                if (res.ok) {
+                    // espera um pouco antes de mostrar a resposta da IA
+                    setTimeout(() => {
+                        chatMessages.removeChild(typing);
+                        addMessage('ai', data.message);
+                        waiting = false;
+                        chatInput.disabled = false;
+                        chatSendBtn.disabled = false;
+                        scrollToBottom();
+                    }, 500 + Math.random() * 1000); // tempo aleatório entre 500ms a 1500ms
+                } else {
+                    throw new Error(data.error || 'Erro desconhecido');
+                }
+            } catch (error) {
+                console.error('Erro ao enviar mensagem:', error);
+                waiting = false;
+                chatInput.disabled = false;
+                chatSendBtn.disabled = false;
+                chatMessages.removeChild(typing);
+                addMessage('ai', 'Desculpe, ocorreu um erro. Tente novamente.');
+            }
+        };
+
+        chatForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const messageText = chatInput.value.trim();
+            sendMessage(messageText);
+        });
+
+        chatSendBtn.addEventListener('click', () => {
+            const messageText = chatInput.value.trim();
+            sendMessage(messageText);
+        });
+    };
+
+    // Inicializa os módulos
     setupThemeToggler();
     setupLoginForm();
     setupProfilePhotoUpload();
