@@ -7,7 +7,7 @@ from datetime import datetime
 import psycopg2
 from psycopg2.extras import DictCursor
 from flask import (Flask, render_template, request, redirect, url_for,
-                   flash, session, jsonify, Response, send_from_directory)
+                   flash, session, jsonify, Response, send_file, send_from_directory)
 from flask_bcrypt import Bcrypt
 from dotenv import load_dotenv
 from functools import wraps
@@ -896,8 +896,110 @@ def logout():
 @app.route('/export_questoes', methods=['POST'])
 @login_required
 def export_questoes():
-    # Esta rota pode ser implementada de forma mais completa no futuro
-    return jsonify({'error': 'Função de exportação não totalmente implementada.'}), 501
+    """Exporta questões selecionadas como um arquivo .docx e o retorna como download.
+    Espera JSON { "ids": [1,2,3] } ou um form com 'ids' como CSV ou 'ids[]'.
+    """
+    # Obter lista de ids do pedido (suporta JSON e form data)
+    ids = []
+    try:
+        if request.is_json:
+            payload = request.get_json() or {}
+            ids = payload.get('ids', [])
+        else:
+            ids = request.form.getlist('ids[]') or request.form.get('ids')
+            if isinstance(ids, str):
+                ids = [i.strip() for i in ids.split(',') if i.strip()]
+    except Exception:
+        ids = []
+
+    # Normalizar para inteiros
+    try:
+        ids = [int(i) for i in ids]
+    except Exception:
+        return jsonify({'error': 'IDs inválidos'}), 400
+
+    if not ids:
+        return jsonify({'error': 'Nenhum ID fornecido para exportação.'}), 400
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=DictCursor)
+        cursor.execute(
+            """SELECT id, enunciado, tipo_questao, nivel_dificuldade, grau_ensino, area_conhecimento, imagem_url
+               FROM questoes WHERE id = ANY(%s) ORDER BY id""",
+            (ids,)
+        )
+        questoes = cursor.fetchall()
+
+        if not questoes:
+            return jsonify({'error': 'Nenhuma questão encontrada para os IDs fornecidos.'}), 404
+
+        doc = Document()
+        doc.styles['Normal'].font.name = 'Arial'
+        doc.styles['Normal'].font.size = Pt(11)
+
+        for idx, q in enumerate(questoes, start=1):
+            # Apenas adicionar o enunciado (sem número da questão) — não adicionar meta/linha de tipo, nível, grau ou área
+            enunciado = q.get('enunciado') or ''
+            doc.add_paragraph(enunciado)
+
+            # Inserir imagem da questão, se houver
+            imagem_bytes = q.get('imagem_url')
+            if imagem_bytes:
+                try:
+                    if isinstance(imagem_bytes, memoryview):
+                        imagem_bytes = bytes(imagem_bytes)
+                    img_io = io.BytesIO(imagem_bytes)
+                    # Adicionar imagem com largura máxima de 4 polegadas
+                    doc.add_picture(img_io, width=Inches(4))
+                except Exception as e:
+                    print(f"Erro ao inserir imagem da questão {q['id']}: {e}")
+
+            # Opções (sem marcações extras além das letras e texto/imagem)
+            if q.get('tipo_questao') != 'DISCURSIVA':
+                cursor.execute("SELECT texto_opcao, is_correta, imagem_url FROM opcoes WHERE questao_id = %s ORDER BY id",
+                               (q['id'],))
+                opcoes = cursor.fetchall()
+                if opcoes:
+                    p = doc.add_paragraph()
+                    for i, op in enumerate(opcoes):
+                        letra = chr(ord('A') + i)
+                        texto = op.get('texto_opcao') or ''
+                        p.add_run(f"{letra}. {texto}")
+                        p.add_run('\n')
+                        op_img = op.get('imagem_url')
+                        if op_img:
+                            try:
+                                if isinstance(op_img, memoryview):
+                                    op_img = bytes(op_img)
+                                img_io = io.BytesIO(op_img)
+                                doc.add_picture(img_io, width=Inches(3))
+                            except Exception as e:
+                                print(f"Erro ao inserir imagem da opção da questão {q['id']}: {e}")
+
+            doc.add_page_break()
+
+        # Preparar arquivo em memória
+        out_io = io.BytesIO()
+        doc.save(out_io)
+        out_io.seek(0)
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"questoes_export_{timestamp}.docx"
+
+        return send_file(out_io,
+                         as_attachment=True,
+                         download_name=filename,
+                         mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+
+    except psycopg2.Error as e:
+        print(f"Erro ao exportar questões: {e}")
+        return jsonify({'error': 'Erro no servidor ao exportar.'}), 500
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
 
 
 if __name__ == '__main__':
