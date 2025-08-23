@@ -259,8 +259,10 @@
             <div class="content-panel chat-panel">
                 <h2></h2>
                 <div id="chat-container">
-                    <div id="chat-messages">
-                        <div class="ai-message">Olá, {{ user_nome or 'usuário' }}! Sou uma IA generativa para a base de questões da sua escola. Como posso ajudar você hoje?</div>
+                    <div id="chat-messages" class="messages-list">
+                        <div class="message ai-message">
+                            <div class="bubble">Olá, {{ user_nome or 'usuário' }}! Sou uma IA generativa para a base de questões da sua escola. Como posso ajudar você hoje?</div>
+                        </div>
                     </div>
                     <form id="chat-form">
                         <input type="text" id="chat-input" placeholder="Digite sua mensagem ou um pedido para criar uma questão...">

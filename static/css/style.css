@@ -796,72 +796,269 @@ html, body {
   }
 }
 
-/* --- ESTILOS DO CHAT COM IA --- */
+/* === Estilos consolidados para Chat com IA (visual do screenshot) === */
 .chat-panel { display: flex; flex-direction: column; align-items: center; gap: 18px; position: relative; }
-.chat-panel h2 { position: absolute; top: 100px; left: 50%; transform: translateX(-50%); z-index: 15; font-size: 2.2rem; mix-blend-mode: overlay; letter-spacing: 1px; }
+.chat-panel h2 { position: absolute; top: 36px; left: 50%; transform: translateX(-50%); z-index: 15; font-size: 2.2rem; letter-spacing: 1px; }
 
-/* Painel maior, com borda arredondada mais pronunciada e leve gradiente */
 #chat-container {
-    width: 100%;
-    max-width: 900px;
-    background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(250,250,255,0.95) 100%);
-    border-radius: 16px;
-    padding: 18px 20px 18px 20px;
-    box-shadow: 0 8px 30px rgba(13,18,40,0.18);
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    border: 1px solid rgba(0,0,0,0.06);
-    position: relative;
+  width: 100%;
+  max-width: 980px;
+  background: linear-gradient(180deg, rgba(250,246,255,0.98) 0%, rgba(240,236,250,0.95) 100%);
+  border-radius: 22px;
+  padding: 22px;
+  box-shadow: 0 18px 50px rgba(13,18,40,0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  border: 1px solid rgba(0,0,0,0.06);
+  position: relative;
 }
-#chat-container::before { content: ''; display: block; height: 6px; width: 90px; border-radius: 6px; background: linear-gradient(90deg, var(--accent-color), var(--accent-color-hover)); margin: 6px auto 4px auto; opacity: 0.95; }
 
-/* Area das mensagens: fundo translúcido, padding interno e cantos arredondados */
+#chat-container::before {
+  content: '';
+  display: block;
+  height: 8px;
+  width: 120px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--accent-color), var(--accent-color-hover));
+  margin: 6px auto 0 auto;
+  opacity: 0.95;
+}
+
 #chat-messages {
-    height: calc(68vh - 150px);
-    min-height: 320px;
-    overflow-y: auto;
-    padding: 18px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    background: linear-gradient(180deg, rgba(0,0,0,0.01), rgba(0,0,0,0.02));
-    border-radius: 10px;
-    border: 1px dashed rgba(0,0,0,0.03);
+  height: calc(68vh - 220px);
+  min-height: 380px;
+  overflow-y: auto;
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: rgba(255,255,255,0.85);
+  border-radius: 16px;
+  border: 1px dashed rgba(0,0,0,0.03);
 }
 
-/* Mensagens - aparência mais refinada e legível */
-.message { max-width: 78%; padding: 12px 16px; border-radius: 14px; box-shadow: 0 6px 18px rgba(11,20,40,0.06); line-height: 1.5; display: inline-flex; align-items: flex-start; gap: 10px; }
-.ai-message { background: #f4f6fb; color: var(--color-text); align-self: flex-start; border-radius: 14px 14px 14px 6px; }
-.user-message { background: linear-gradient(135deg, var(--accent-color), var(--accent-color-hover)); color: #fff; align-self: flex-end; border-radius: 14px 14px 6px 14px; }
-
-/* Avatar simples para futuras mensagens com imagem */
-.message .avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
-.message .bubble { display: inline-block; }
-
-/* Meta (timestamp, leitura) */
-.msg-meta { display: block; margin-top: 6px; font-size: 0.78rem; color: var(--color-text-secondary); }
-
-/* Input e botão de envio repaginados */
-#chat-form { display: flex; gap: 12px; align-items: center; padding: 6px; }
-#chat-input { flex: 1; padding: 14px 18px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.06); background: #f6f7fb; color: var(--color-text); font-size: 1rem; box-shadow: inset 0 1px 0 rgba(255,255,255,0.6); }
-#chat-send-btn { width: 54px; height: 54px; border-radius: 50%; background: linear-gradient(135deg, var(--accent-color), var(--accent-color-hover)); color: #fff; border: none; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 8px 20px rgba(99,66,170,0.18); transform: translateZ(0); }
-#chat-send-btn:hover { transform: translateY(-3px) scale(1.03); box-shadow: 0 14px 30px rgba(99,66,170,0.22); }
-#chat-send-btn i { font-size: 1.05rem; }
-
-/* Pequenos ajustes no scroll para ficar discreto */
-#chat-messages::-webkit-scrollbar { width: 12px; }
-#chat-messages::-webkit-scrollbar-track { background: transparent; }
-#chat-messages::-webkit-scrollbar-thumb { background: linear-gradient(180deg, rgba(0,0,0,0.08), rgba(0,0,0,0.12)); border-radius: 8px; }
-
-/* Indicador de nova mensagem (quando houver) */
-.new-message-indicator { display: inline-block; background: var(--accent-color); color: white; padding: 6px 10px; border-radius: 999px; font-weight: 700; font-size: 0.85rem; box-shadow: 0 6px 16px rgba(128,90,213,0.18); }
-
-/* Mobile-friendly: reduzir espaços e tornar o chat full width */
-@media (max-width: 800px) {
-    .chat-panel h2 { top: 20px; font-size: 1.6rem; }
-    #chat-container { max-width: 96%; padding: 12px; }
-    #chat-messages { height: calc(60vh - 110px); min-height: 220px; padding: 12px; }
-    .message { max-width: 92%; }
-    #chat-send-btn { width: 48px; height: 48px; }
+/* Mensagens */
+.message {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
 }
+
+/* Bolha da IA (grande, com sombra suave) */
+.message.ai-message { justify-content: flex-start; }
+.message.ai-message .bubble {
+  background: #eef3f6; /* tom claro neutro */
+  color: var(--color-text);
+  padding: 22px 26px;
+  border-radius: 18px;
+  box-shadow: 0 30px 60px rgba(11,20,40,0.08);
+  line-height: 1.6;
+  font-size: 1rem;
+  max-width: 100%;
+  display: block;
+}
+
+/* Bolha do usuário (pequena, alinhada à direita) */
+.message.user-message { justify-content: flex-end; }
+.message.user-message .bubble {
+  background: linear-gradient(135deg, var(--accent-color), var(--accent-color-hover));
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 18px;
+  font-size: 0.9rem;
+  align-self: flex-start;
+  box-shadow: 0 8px 20px rgba(99,66,170,0.14);
+  display: inline-block;
+  white-space: nowrap;
+}
+
+/* Compatibilidade explícita: mensagens da IA (diretas ou .message) sempre à esquerda */
+#chat-messages > .ai-message,
+#chat-messages > div.ai-message {
+  display: inline-block;
+  background: #eef3f6;
+  color: var(--color-text);
+  padding: 18px 22px;
+  border-radius: 18px;
+  box-shadow: 0 24px 48px rgba(11,20,40,0.06);
+  margin-right: auto; /* empurra para a esquerda */
+  max-width: 84%;
+  word-wrap: break-word;
+}
+
+/* Se houver .bubble dentro da .ai-message, aplicar o visual na .bubble */
+#chat-messages > .ai-message .bubble,
+#chat-messages .message.ai-message .bubble {
+  background: #eef3f6;
+  color: var(--color-text);
+  padding: 18px 22px;
+  border-radius: 18px;
+  box-shadow: 0 24px 48px rgba(11,20,40,0.06);
+  display: block;
+}
+
+/* Garantir que mensagens do usuário diretas fiquem à direita */
+#chat-messages > .user-message,
+#chat-messages > div.user-message {
+  display: inline-block;
+  background: linear-gradient(135deg, var(--accent-color), var(--accent-color-hover));
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 18px;
+  box-shadow: 0 10px 26px rgba(99,66,170,0.12);
+  margin-left: auto; /* empurra para a direita */
+  max-width: 84%;
+  word-wrap: break-word;
+}
+
+/* Correção: transformar filhos diretos sem .message em bolhas do usuário (quando o JS não cria o wrapper) */
+#chat-messages > *:not(.message) {
+  display: inline-block;
+  background: linear-gradient(135deg, var(--accent-color), var(--accent-color-hover));
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 14px;
+  font-size: 0.95rem;
+  box-shadow: 0 8px 20px rgba(99,66,170,0.12);
+  margin-left: auto; /* empurra para a direita */
+  max-width: 84%;
+  word-wrap: break-word;
+}
+
+/* Se for um nó de texto dentro de um <p> ou similar, garantir espaçamento vertical */
+#chat-messages > p:not(.message) { margin: 8px 0; }
+
+/* Mantém consistência em mobile */
+@media (max-width: 900px) {
+  #chat-container { padding: 16px; }
+  #chat-messages { padding: 16px; min-height: 240px; }
+  .message.ai-message .bubble { padding: 16px 18px; font-size: 0.98rem; }
+  .message.user-message .bubble { padding: 8px 14px; font-size: 0.88rem; }
+  #chat-send-btn { width: 50px; height: 50px; }
+}
+#chat-input-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: auto;
+}
+
+/* --- Garantir que .message.* apareça como bolha mesmo sem .bubble interno --- */
+/* Usuário: bolha à direita */
+#chat-messages .message.user-message {
+  display: inline-block;
+  background: linear-gradient(135deg, var(--accent-color), var(--accent-color-hover));
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 18px;
+  font-size: 0.95rem;
+  box-shadow: 0 10px 26px rgba(99,66,170,0.12);
+  margin-left: auto; /* empurra para a direita */
+  max-width: 84%;
+  word-wrap: break-word;
+}
+
+/* IA: bolha grande à esquerda */
+#chat-messages .message.ai-message {
+  display: block;
+  background: #eef3f6;
+  color: var(--color-text);
+  padding: 18px 22px;
+  border-radius: 18px;
+  box-shadow: 0 24px 48px rgba(11,20,40,0.06);
+  margin-right: auto;
+  max-width: 100%;
+  word-wrap: break-word;
+}
+
+/* Se existir .bubble dentro do .message, manter a .bubble como conteúdo e remover padding duplicado */
+#chat-messages .message.user-message .bubble,
+#chat-messages .message.ai-message .bubble {
+  padding: 0;
+  background: transparent;
+}
+
+/* Casos especiais: garantir que elementos diretos já tratados mantenham margem vertical apropriada */
+#chat-messages > p, #chat-messages > div { margin: 8px 0; }
+
+/* Fim do bloco de compatibilidade de bolhas */
+
+/* Ajustes do campo de digitação do chat (input + botão) */
+#chat-form {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0 0 0; /* separação do container de mensagens */
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#chat-input-area, #chat-form-wrapper {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+#chat-input {
+  flex: 1 1 auto;
+  min-height: 48px;
+  max-height: 140px;
+  padding: 12px 56px 12px 16px; /* espaço para o botão à direita */
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-text);
+  font-size: 1rem;
+  line-height: 1.2;
+  resize: none; /* para textarea */
+  outline: none;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.03);
+}
+
+#chat-input:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 6px rgba(128,90,213,0.06);
+}
+
+#chat-send-btn {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, var(--accent-color), var(--accent-color-hover));
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(99,66,170,0.18);
+  margin-left: -54px; /* sobrepõe o input (cria efeito de botão flutuante) */
+  z-index: 3;
+}
+
+#chat-send-btn:active { transform: translateY(1px) scale(0.995); }
+
+#chat-send-btn svg { width: 18px; height: 18px; }
+
+/* Quando o botão for desabilitado */
+#chat-send-btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Espaçamento interno do rodapé do chat para evitar corte em telas pequenas */
+#chat-container .chat-footer, .chat-footer {
+  padding-top: 10px;
+}
+
+/* Mobile adjustments */
+@media (max-width: 720px) {
+  #chat-input { padding-right: 48px; font-size: 0.95rem; }
+  #chat-send-btn { width: 44px; height: 44px; margin-left: -50px; }
+}
+
+/* Garantir que o input não extrapole o container quando houver overflow */
+#chat-messages + .chat-footer, #chat-form { width: 100%; }
