@@ -49,7 +49,7 @@ generation_config = {
     "max_output_tokens": 8192,
 }
 # --- CORREÇÃO DO NOME DO MODELO APLICADA AQUI ---
-model = genai.GenerativeModel(model_name="gemini-2.5-flash", generation_config=generation_config)
+model = genai.GenerativeModel(model_name="gemini-1.5-flash", generation_config=generation_config)
 
 
 def custom_search_images(query):
@@ -210,11 +210,101 @@ def login_required(f):
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def chat_ia():
+    import re
+
+    def _is_affirmative(text):
+        if not text:
+            return False
+        words = re.findall(r"\w+", text.lower(), flags=re.UNICODE)
+        affirmatives = {"sim", "s", "yes", "y", "claro", "pode", "ok", "porfavor", "por favor"}
+        return any(w in affirmatives for w in words)
+
     data = request.get_json()
     user_message = data.get('message')
     user_nome = session.get('user_nome', 'usuário')
-    pending_action = "Sim" if 'pending_question' in session else "Não"
 
+    # Etapa 2: Checa se o usuário está respondendo sobre a imagem
+    if session.get('creation_flow') == 'awaiting_image_decision':
+        topic = session.get('creation_topic')
+        # limpar o estado de fluxo de criação — ainda mantemos pending_question apenas após gerar
+        session.pop('creation_flow', None)
+        session.pop('creation_topic', None)
+
+        # Decide se busca ou não a imagem com base na resposta (mais robusto)
+        add_image = _is_affirmative(user_message)
+
+        try:
+            # Gera a questão (sem depender da resposta sobre imagem)
+            create_prompt = f"""
+            Crie uma questão de múltipla escolha sobre o tópico "{topic}".
+            Formate a resposta como um JSON válido com as chaves: "enunciado", "tipo_questao", "nivel_dificuldade", "grau_ensino", "area_conhecimento", e "opcoes".
+            A chave "tipo_questao" DEVE ter o valor "ESCOLHA_UNICA".
+            A chave "opcoes" deve ser uma lista de 4 objetos, cada um com "texto_opcao" e "is_correta". Apenas uma opção deve ser correta.
+            Responda APENAS com o JSON.
+            """
+            response = model.generate_content(create_prompt)
+            question_json = clean_and_parse_json(response.text)
+            if not question_json:
+                raise ValueError("A IA não retornou um JSON de questão válido.")
+
+            imagem_path_servidor = None
+            if add_image:
+                # Busca e anexa a imagem
+                search_results = custom_search_images(f"ilustração didática {topic}")
+                if search_results:
+                    for item in search_results:
+                        image_url = item.get('link') or item.get('image', {}).get('contextLink')
+                        if not image_url:
+                            continue
+                        try:
+                            headers = {'User-Agent': 'Mozilla/5.0'}
+                            img_response = requests.get(image_url, stream=True, timeout=10, headers=headers)
+                            img_response.raise_for_status()
+                            extensao = os.path.splitext(image_url)[1].split('?')[0] or '.jpg'
+                            if extensao.lower() not in ['.jpg', '.jpeg', '.png', '.gif']:
+                                extensao = '.jpg'
+                            nome_ficheiro = f"{uuid.uuid4()}{extensao}"
+                            imagem_path_servidor = os.path.join(app.config['UPLOAD_FOLDER'], nome_ficheiro)
+                            with open(imagem_path_servidor, 'wb') as f:
+                                for chunk in img_response.iter_content(chunk_size=8192):
+                                    f.write(chunk)
+                            # ligar o caminho da imagem ao JSON para inserção posterior
+                            question_json['imagem_path'] = imagem_path_servidor
+                            break
+                        except requests.exceptions.RequestException as e:
+                            print(f"Falha ao descarregar {image_url}: {e}")
+                            imagem_path_servidor = None
+                            continue
+                else:
+                    print("Nenhum resultado de imagem encontrado para o tópico.")
+
+            # Apresenta a questão para confirmação final
+            session['pending_question'] = question_json
+            message = f"Criei a seguinte questão sobre '{topic}', {user_nome}:\n\n"
+            message += f"**Enunciado:** {question_json.get('enunciado', 'N/A')}\n"
+            for i, opt in enumerate(question_json.get('opcoes', [])):
+                message += f"{i + 1}. {opt.get('texto_opcao', 'N/A')}\n"
+
+            if imagem_path_servidor:
+                try:
+                    with open(imagem_path_servidor, 'rb') as f:
+                        imagem_bytes = f.read()
+                    mime_type = magic.from_buffer(imagem_bytes, mime=True)
+                    base64_string = base64.b64encode(imagem_bytes).decode('utf-8')
+                    data_url = f"data:{mime_type};base64,{base64_string}"
+                    message += f"\n<div class='image-preview-ia'><img src='{data_url}' alt='Imagem sugerida'></div>\n"
+                except Exception as e:
+                    print(f"Erro ao embutir a imagem: {e}")
+
+            message += "\nVocê gostaria de cadastrá-la no banco de dados?"
+            return jsonify({'type': 'chat', 'message': message})
+
+        except Exception as e:
+            print(f"Erro no fluxo de criação: {e}")
+            return jsonify({'type': 'chat', 'message': 'Desculpe, ocorreu um erro ao criar a questão. Vamos tentar de novo?'}), 500
+
+    # Etapa 1: Análise de intenção
+    pending_action = "Sim" if 'pending_question' in session else "Não"
     intent_prompt = f"""
     Analise a mensagem do usuário chamado '{user_nome}' para determinar a intenção. As intenções possíveis são: SEARCH, CREATE, INSERT, CHAT.
     - Se o usuário quer procurar, pesquisar ou buscar, a intenção é SEARCH.
@@ -236,61 +326,10 @@ def chat_ia():
         topic = intent_data.get("topic")
 
         if intent == "CREATE":
-            create_prompt = f"""
-            Crie uma questão de múltipla escolha sobre o tópico "{topic}".
-            Formate a resposta como um JSON válido com as chaves: "enunciado", "tipo_questao", "nivel_dificuldade", "grau_ensino", "area_conhecimento", e "opcoes".
-            A chave "tipo_questao" DEVE ter o valor "ESCOLHA_UNICA".
-            A chave "opcoes" deve ser uma lista de 4 objetos, cada um com "texto_opcao" e "is_correta". Apenas uma opção deve ser correta.
-            Responda APENAS com o JSON.
-            """
-            response = model.generate_content(create_prompt)
-            question_json = clean_and_parse_json(response.text)
-            if not question_json:
-                raise ValueError("A IA não retornou um JSON de questão válido.")
-
-            imagem_path_servidor = None
-            search_results = custom_search_images(f"ilustração didática {topic}")
-            if search_results:
-                for item in search_results:
-                    image_url = item.get('link')
-                    if not image_url: continue
-                    try:
-                        headers = {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
-                        img_response = requests.get(image_url, stream=True, timeout=10, headers=headers)
-                        img_response.raise_for_status()
-                        extensao = os.path.splitext(image_url)[1].split('?')[0] or '.jpg'
-                        if extensao.lower() not in ['.jpg', '.jpeg', '.png', '.gif']: extensao = '.jpg'
-                        nome_ficheiro = f"{uuid.uuid4()}{extensao}"
-                        imagem_path_servidor = os.path.join(app.config['UPLOAD_FOLDER'], nome_ficheiro)
-                        with open(imagem_path_servidor, 'wb') as f:
-                            for chunk in img_response.iter_content(chunk_size=8192):
-                                f.write(chunk)
-                        question_json['imagem_path'] = imagem_path_servidor
-                        break
-                    except requests.exceptions.RequestException as e:
-                        print(f"Falha ao descarregar {image_url}: {e}")
-                        imagem_path_servidor = None
-                        continue
-
-            session['pending_question'] = question_json
-            message = f"Criei a seguinte questão sobre '{topic}', {user_nome}:\n\n"
-            message += f"**Enunciado:** {question_json.get('enunciado', 'N/A')}\n"
-            for i, opt in enumerate(question_json.get('opcoes', [])):
-                message += f"{i + 1}. {opt.get('texto_opcao', 'N/A')}\n"
-
-            if imagem_path_servidor:
-                try:
-                    with open(imagem_path_servidor, 'rb') as f:
-                        imagem_bytes = f.read()
-                    mime_type = magic.from_buffer(imagem_bytes, mime=True)
-                    base64_string = base64.b64encode(imagem_bytes).decode('utf-8')
-                    data_url = f"data:{mime_type};base64,{base64_string}"
-                    message += f"\n<div class='image-preview-ia'><img src='{data_url}' alt='Imagem sugerida'></div>\n"
-                except Exception as e:
-                    print(f"Erro ao embutir a imagem: {e}")
-
-            message += "\nVocê gostaria de cadastrá-la no banco de dados?"
+            # Pergunta se o usuário quer uma imagem (fluxo de pergunta/decisão)
+            session['creation_flow'] = 'awaiting_image_decision'
+            session['creation_topic'] = topic
+            message = f"Entendido. Você gostaria que eu adicione uma imagem à questão sobre '{topic}'?"
             return jsonify({'type': 'chat', 'message': message})
 
         elif intent == "SEARCH":
@@ -319,8 +358,9 @@ def chat_ia():
     except Exception as e:
         print(f"Erro na API do Gemini ou no processamento do chat: {e}")
         session.pop('pending_question', None)
+        session.pop('creation_flow', None)
+        session.pop('creation_topic', None)
         return jsonify({'type': 'chat', 'message': 'Desculpe, ocorreu um erro. Poderia reformular seu pedido?'}), 500
-
 
 @app.route('/')
 def index():
@@ -1005,3 +1045,5 @@ def export_questoes():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 4000))
     app.run(host='0.0.0.0', port=port, debug=True)
+
+    
