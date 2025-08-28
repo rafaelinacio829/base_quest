@@ -306,6 +306,12 @@
                     {% endif %}
                 {% endwith %}
 
+                {% if help_message %}
+                    <div class="flash-message info" style="background: #f6e05e; color: #222; padding: 15px; border-radius: 8px; margin-bottom: 18px; white-space: pre-line;">
+                        {{ help_message }}
+                    </div>
+                {% endif %}
+
                 <div class="settings-container">
                     <div class="settings-card">
                         <h3>Informações do Perfil</h3>
@@ -347,8 +353,141 @@
                             <button type="submit" class="submit-btn">Alterar Senha</button>
                         </form>
                     </div>
+
+                    {% if can_create_users %}
+                    <div class="settings-card">
+                        <h3>Cadastrar Usuário</h3>
+                        <form action="{{ url_for('add_user') }}" method="POST">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="novo_nome">Nome</label>
+                                    <input type="text" id="novo_nome" name="nome" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="novo_sobrenome">Sobrenome</label>
+                                    <input type="text" id="novo_sobrenome" name="sobrenome" required>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="novo_email">Email</label>
+                                <input type="email" id="novo_email" name="email" required>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="novo_senha">Senha</label>
+                                    <input type="password" id="novo_senha" name="senha" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="novo_confirmar_senha">Confirmar Senha</label>
+                                    <input type="password" id="novo_confirmar_senha" name="confirmar_senha" required>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="is_admin">
+                                    <input type="checkbox" id="is_admin" name="is_admin"> Conceder privilégios de administrador
+                                </label>
+                            </div>
+
+                            <div class="form-buttons">
+                                <button type="submit" class="submit-btn"><i class="fas fa-user-plus"></i> Cadastrar Usuário</button>
+                            </div>
+                        </form>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
+        {% elif view == 'first_change_password' %}
+            <div class="config-card password-change" style="max-width:640px;margin:20px auto;padding:20px;background:#fff;border-radius:8px;">
+              <h2 style="margin-top:0;">Alterar senha (primeiro acesso)</h2>
+              <p>Por segurança, você precisa alterar a senha temporária. Escolha uma senha segura que você consiga lembrar.</p>
+
+              <form id="firstChangeForm" action="{{ url_for('first_change_password') }}" method="POST" novalidate>
+                <div class="form-group">
+                  <label for="nova_senha">Nova senha</label>
+                  <input type="password" id="nova_senha" name="nova_senha" required minlength="8" class="form-control" style="width:100%;padding:8px;margin-top:6px;">
+                  <small class="form-text text-muted">Mínimo 8 caracteres. Recomendado: mix de maiúsculas, minúsculas, números e símbolos.</small>
+                </div>
+
+                <div class="form-group" style="margin-top:12px;">
+                  <label for="confirmar_senha">Confirmar nova senha</label>
+                  <input type="password" id="confirmar_senha" name="confirmar_senha" required class="form-control" style="width:100%;padding:8px;margin-top:6px;">
+                  <div id="matchMsg" style="color:#c00;margin-top:6px;display:none;">As senhas não coincidem.</div>
+                </div>
+
+                <div class="form-group" style="margin-top:12px;">
+                  <label>Força da senha</label>
+                  <div id="strengthBar" style="height:10px;background:#eee;border-radius:6px;margin-top:6px;overflow:hidden;">
+                    <div id="strengthFill" style="height:100%;width:0%;background:linear-gradient(90deg,#ff4b4b,#ffb14b,#7be86b);transition:width .2s ease;"></div>
+                  </div>
+                  <small id="strengthText" class="form-text text-muted">&nbsp;</small>
+                </div>
+
+                <div style="margin-top:18px;display:flex;gap:12px;align-items:center;">
+                  <button type="submit" id="submitBtn" class="btn btn-primary" disabled style="padding:8px 14px;border-radius:6px;">Alterar senha</button>
+                  <small class="text-muted">Você será redirecionado ao painel após a alteração.</small>
+                </div>
+              </form>
+            </div>
+
+            <script>
+            (function(){
+              const pass = document.getElementById('nova_senha');
+              const conf = document.getElementById('confirmar_senha');
+              const submit = document.getElementById('submitBtn');
+              const matchMsg = document.getElementById('matchMsg');
+              const strengthFill = document.getElementById('strengthFill');
+              const strengthText = document.getElementById('strengthText');
+
+              function scorePassword(s){
+                let score = 0;
+                if(!s) return 0;
+                if(s.length >= 8) score += 1;
+                if(/[A-Z]/.test(s)) score += 1;
+                if(/[0-9]/.test(s)) score += 1;
+                if(/[^A-Za-z0-9]/.test(s)) score += 1;
+                if(s.length >= 12) score += 1;
+                return score; // 0..5
+              }
+
+              function update(){
+                const p = pass.value || '';
+                const c = conf.value || '';
+                const sc = scorePassword(p);
+                const pct = Math.round((sc / 5) * 100);
+                strengthFill.style.width = pct + '%';
+
+                if(sc <= 1) { strengthText.textContent = 'Muito fraca'; }
+                else if(sc == 2) { strengthText.textContent = 'Fraca'; }
+                else if(sc == 3) { strengthText.textContent = 'Média'; }
+                else if(sc == 4) { strengthText.textContent = 'Forte'; }
+                else { strengthText.textContent = 'Muito forte'; }
+
+                const meetsStrength = sc >= 2; // mínimo aceitável
+                const matches = p && c && p === c;
+
+                if(p && c && !matches){
+                  matchMsg.style.display = 'block';
+                } else {
+                  matchMsg.style.display = 'none';
+                }
+
+                submit.disabled = !(meetsStrength && matches);
+              }
+
+              pass.addEventListener('input', update);
+              conf.addEventListener('input', update);
+
+              document.getElementById('firstChangeForm').addEventListener('submit', function(e){
+                if(submit.disabled){
+                  e.preventDefault();
+                  return false;
+                }
+              });
+            })();
+            </script>
         {% endif %}
 
         <div class="modal-overlay" id="questionModalOverlay">

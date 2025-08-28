@@ -14,6 +14,8 @@ from functools import wraps
 import magic
 import uuid
 import requests
+from email.message import EmailMessage
+import smtplib
 
 # --- IMPORTAÇÃO PARA A API DO GOOGLE ---
 from googleapiclient.discovery import build
@@ -207,6 +209,105 @@ def login_required(f):
     return decorated_function
 
 
+def columns_in_usuarios():
+    """Retorna um set com os nomes de colunas existentes na tabela usuarios."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=DictCursor)
+        cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'usuarios'")
+        cols = {r['column_name'] for r in cur.fetchall()}
+        return cols
+    except Exception as e:
+        print(f"Erro ao verificar colunas da tabela usuarios: {e}")
+        return set()
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+
+
+def create_is_admin_column_if_missing():
+    """Não modifica o schema em runtime. Apenas verifica se a coluna 'is_admin' existe.
+    As alterações de schema devem ser feitas via migração/administrador.
+    """
+    try:
+        existing = columns_in_usuarios()
+        return 'is_admin' in existing
+    except Exception as e:
+        print(f'Erro ao verificar coluna is_admin: {e}')
+        return False
+
+
+def user_can_manage_users():
+    """Verifica se o usuário atual tem permissão para criar/gerenciar usuários.
+    Evita selecionar colunas que possam não existir na tabela. Busca o email primeiro,
+    consulta information_schema para detectar se as colunas de permissão existem e,
+    se existirem, recupera seus valores para decisão.
+    """
+    if 'user_id' not in session:
+        return False
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=DictCursor)
+        # Buscar email primeiro (sempre presente)
+        cursor.execute("SELECT email FROM usuarios WHERE id = %s", (session['user_id'],))
+        user = cursor.fetchone()
+        if not user:
+            return False
+
+        user_email = user.get('email') or ''
+
+        # Verificar colunas existentes
+        existing_cols = columns_in_usuarios()
+
+        # Se existirem colunas de permissão, buscar seus valores
+        cols_to_check = []
+        if 'is_admin' in existing_cols:
+            cols_to_check.append('is_admin')
+        if 'can_create_users' in existing_cols:
+            cols_to_check.append('can_create_users')
+
+        if cols_to_check:
+            cols_to_select = ', '.join(cols_to_check + ['email'])
+            cursor.execute(f"SELECT {cols_to_select} FROM usuarios WHERE id = %s", (session['user_id'],))
+            user = cursor.fetchone()
+            if 'is_admin' in cols_to_check and user.get('is_admin'):
+                return True
+            if 'can_create_users' in cols_to_check and user.get('can_create_users'):
+                return True
+
+        # Fallback para variável de ambiente USER_CREATORS (lista de ids ou emails)
+        allowed = os.environ.get('USER_CREATORS', '')
+        if allowed:
+            allowed_set = {s.strip().lower() for s in allowed.split(',') if s.strip()}
+            if user_email and user_email.lower() in allowed_set:
+                return True
+            if str(session['user_id']) in allowed_set:
+                return True
+
+        return False
+    except Exception as e:
+        print(f"Erro ao verificar permissões do usuário: {e}")
+        # fallback apenas para env var
+        allowed = os.environ.get('USER_CREATORS', '')
+        if allowed:
+            allowed_set = {s.strip().lower() for s in allowed.split(',') if s.strip()}
+            user_email = session.get('user_email', '') or ''
+            if user_email and user_email.lower() in allowed_set:
+                return True
+            if str(session.get('user_id')) in allowed_set:
+                return True
+        return False
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+
 @app.route('/api/chat', methods=['POST'])
 @login_required
 def chat_ia():
@@ -380,8 +481,14 @@ def login():
         try:
             conn = get_db_connection()
             cursor = conn.cursor(cursor_factory=DictCursor)
-            cursor.execute('SELECT id, nome, sobrenome, senha_hash, foto_perfil FROM usuarios WHERE email = %s',
-                           (email,))
+
+            # Detectar se a coluna must_change_password existe e incluir na seleção
+            existing_cols = columns_in_usuarios()
+            select_cols = ['id', 'nome', 'sobrenome', 'senha_hash', 'foto_perfil']
+            if 'must_change_password' in existing_cols:
+                select_cols.append('must_change_password')
+            cols_sql = ', '.join(select_cols)
+            cursor.execute(f'SELECT {cols_sql} FROM usuarios WHERE email = %s', (email,))
             user = cursor.fetchone()
             if user and bcrypt.check_password_hash(user['senha_hash'], senha):
                 session.clear()
@@ -392,13 +499,24 @@ def login():
                 foto_perfil_data = user.get('foto_perfil')
                 foto_perfil_url = None
                 if foto_perfil_data:
-                    foto_perfil_url = foto_perfil_data.decode('utf-8') if isinstance(foto_perfil_data, (bytes,
-                                                                                                        bytearray)) else foto_perfil_data
+                    foto_perfil_url = foto_perfil_data.decode('utf-8') if isinstance(foto_perfil_data, (bytes, bytearray)) else foto_perfil_data
+
+                # Se precisar forçar troca de senha, direcionar para rota específica
+                if 'must_change_password' in user and user.get('must_change_password'):
+                    session['must_change_password'] = True
+                    return jsonify({
+                        'success': True,
+                        'user': {
+                            'nome_completo': f"{user['nome']} {user['sobrenome']}",
+                            'foto_perfil_url': foto_perfil_url
+                        },
+                        'redirect_url': url_for('first_change_password')
+                    })
 
                 return jsonify({
                     'success': True,
                     'user': {
-                        'nome_completo': f"{user['nome']} {user['sobrenome']}".strip(),
+                        'nome_completo': f"{user['nome']} {user['sobrenome']}",
                         'foto_perfil_url': foto_perfil_url
                     },
                     'redirect_url': url_for('painel')
@@ -587,73 +705,166 @@ def configuracoes():
         if conn:
             cursor.close()
             conn.close()
+
+    can_create_users = user_can_manage_users()
+
+    # Mensagem de ajuda para usuários sem permissão (mensagem concisa)
+    help_message = None
+    if not can_create_users:
+        help_message = 'Você não tem permissão para cadastrar usuários. Contate um administrador para habilitar este recurso.'
+
     return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url,
-                           view='configuracoes', user=user_data)
+                           view='configuracoes', user=user_data, can_create_users=can_create_users, help_message=help_message)
 
 
-@app.route('/update_profile', methods=['POST'])
+@app.route('/add_user', methods=['POST'])
 @login_required
-def update_profile():
+def add_user():
+    # Somente usuários autorizados podem criar novos usuários
+    if not user_can_manage_users():
+        flash('Você não tem permissão para criar usuários.', 'error')
+        return redirect(url_for('configuracoes'))
+
     nome = request.form.get('nome')
     sobrenome = request.form.get('sobrenome')
-    if not nome or not sobrenome:
-        flash("Nome e sobrenome são obrigatórios.", "error")
+    email = request.form.get('email')
+    senha = request.form.get('senha')
+    confirmar = request.form.get('confirmar_senha')
+    is_admin_flag = request.form.get('is_admin') == 'on'
+
+    if not all([nome, sobrenome, email, senha, confirmar]):
+        flash('Preencha todos os campos obrigatórios.', 'error')
         return redirect(url_for('configuracoes'))
+    if senha != confirmar:
+        flash('As senhas não coincidem.', 'error')
+        return redirect(url_for('configuracoes'))
+
+    senha_hash = bcrypt.generate_password_hash(senha).decode('utf-8')
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("UPDATE usuarios SET nome = %s, sobrenome = %s WHERE id = %s",
-                       (nome, sobrenome, session['user_id']))
-        conn.commit()
-        session['user_nome'] = nome
-        session['user_sobrenome'] = sobrenome
-        flash("Perfil atualizado com sucesso!", "success")
-    except psycopg2.Error as e:
-        if conn: conn.rollback()
-        flash("Ocorreu um erro ao atualizar o seu perfil.", "error")
-        print(f"Erro em /update_profile: {e}")
-    finally:
-        if conn:
-            cursor.close()
-            conn.close()
-    return redirect(url_for('configuracoes'))
-
-
-@app.route('/change_password', methods=['POST'])
-@login_required
-def change_password():
-    senha_atual = request.form.get('senha_atual')
-    nova_senha = request.form.get('nova_senha')
-    confirmar_senha = request.form.get('confirmar_senha')
-    if not all([senha_atual, nova_senha, confirmar_senha]):
-        flash("Todos os campos de senha são obrigatórios.", "error")
-        return redirect(url_for('configuracoes'))
-    if nova_senha != confirmar_senha:
-        flash("As novas senhas não coincidem.", "error")
-        return redirect(url_for('configuracoes'))
-    conn = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=DictCursor)
-        cursor.execute("SELECT senha_hash FROM usuarios WHERE id = %s", (session['user_id'],))
-        user = cursor.fetchone()
-        if not user or not bcrypt.check_password_hash(user['senha_hash'], senha_atual):
-            flash("A sua senha atual está incorreta.", "error")
+        # Verifica se já existe usuário com o e-mail
+        cursor.execute('SELECT id FROM usuarios WHERE email = %s', (email,))
+        if cursor.fetchone():
+            flash('Já existe um usuário com esse e-mail.', 'error')
             return redirect(url_for('configuracoes'))
-        nova_senha_hash = bcrypt.generate_password_hash(nova_senha).decode('utf-8')
-        cursor.execute("UPDATE usuarios SET senha_hash = %s WHERE id = %s", (nova_senha_hash, session['user_id']))
+
+        existing_cols = columns_in_usuarios()
+        # Montar insert dinamicamente dependendo das colunas existentes
+        cols = ['nome', 'sobrenome', 'email', 'senha_hash']
+        vals = [nome, sobrenome, email, senha_hash]
+        if 'is_admin' in existing_cols:
+            cols.append('is_admin')
+            vals.append(is_admin_flag)
+        if 'must_change_password' in existing_cols:
+            cols.append('must_change_password')
+            vals.append(True)
+
+        placeholders = ', '.join(['%s'] * len(vals))
+        cols_sql = ', '.join(cols)
+        sql = f"INSERT INTO usuarios ({cols_sql}) VALUES ({placeholders})"
+        cursor.execute(sql, tuple(vals))
+
         conn.commit()
-        flash("Senha alterada com sucesso!", "success")
+
+        # Enviar email de convite (melhor tentar após commit)
+        sent = send_invitation_email(email, f"{nome} {sobrenome}", senha)
+        if not sent:
+            flash('Usuário criado, mas falha ao enviar email de convite (ver logs).', 'warning')
+        else:
+            flash('Usuário criado com sucesso! Email de convite enviado.', 'success')
     except psycopg2.Error as e:
-        if conn: conn.rollback()
-        flash("Ocorreu um erro ao alterar a sua senha.", "error")
-        print(f"Erro em /change_password: {e}")
+        if conn:
+            conn.rollback()
+        flash('Erro ao criar usuário.', 'error')
+        print(f"Erro em /add_user: {e}")
     finally:
         if conn:
             cursor.close()
             conn.close()
     return redirect(url_for('configuracoes'))
+
+
+def send_invitation_email(to_email, nome, senha):
+    """Envia um email de convite com o link de acesso e a senha temporária.
+    Requer as variáveis de ambiente: SMTP_SERVER, SMTP_PORT, SMTP_USER, SMTP_PASS e opcionalmente EMAIL_FROM, APP_URL.
+    """
+    smtp_server = os.environ.get('smtp.gmail.com')
+    smtp_port = int(os.environ.get('SMTP_PORT', 587))
+    smtp_user = os.environ.get('rafaelinaciosilva15@gmail.com')
+    smtp_pass = os.environ.get('Inaciosilva99!')
+    email_from = os.environ.get('EMAIL_FROM', smtp_user)
+    app_url = os.environ.get('base-quest.onrender.com') or None
+
+    if not smtp_server or not smtp_user or not smtp_pass:
+        print('Configuração SMTP incompleta; não será enviado e-mail.')
+        return False
+
+    try:
+        msg = EmailMessage()
+        msg['Subject'] = 'Acesso ao Base Quest - convites'
+        msg['From'] = email_from
+        msg['To'] = to_email
+        # tentar montar URL de login com base no APP_URL; se ocorrer dentro de request, url_for pode ser usado pelo chamador
+        login_link = app_url.rstrip('/') + url_for('login') if app_url else url_for('login', _external=True)
+        body = f"Olá {nome},\n\nVocê foi cadastrado no Base Quest.\nAcesse: {login_link}\nUtilize a senha temporária: {senha}\nNo primeiro acesso será obrigatório alterar a senha.\n\nSe você não solicitou este cadastro, ignore esta mensagem.\n\nAtenciosamente,\nBase Quest"
+        msg.set_content(body)
+        with smtplib.SMTP(smtp_server, smtp_port) as s:
+            s.starttls()
+            s.login(smtp_user, smtp_pass)
+            s.send_message(msg)
+        return True
+    except Exception as e:
+        print(f'Erro ao enviar email de convite: {e}')
+        return False
+
+
+@app.route('/first_change_password', methods=['GET', 'POST'])
+@login_required
+def first_change_password():
+    """Rota para forçar a troca de senha no primeiro acesso. Não requer a senha atual.
+    Após trocar a senha, a flag must_change_password é marcada como FALSE.
+    """
+    # Verificar se a coluna existe; se não, redirecionar para configuracoes normal
+    existing = columns_in_usuarios()
+    if 'must_change_password' not in existing:
+        flash('Troca forçada de senha não configurada no servidor. Contate o administrador.', 'error')
+        return redirect(url_for('configuracoes'))
+
+    if request.method == 'POST':
+        nova_senha = request.form.get('nova_senha')
+        confirmar_senha = request.form.get('confirmar_senha')
+        if not nova_senha or not confirmar_senha:
+            flash('Todos os campos são obrigatórios.', 'error')
+            return redirect(url_for('first_change_password'))
+        if nova_senha != confirmar_senha:
+            flash('As senhas não coincidem.', 'error')
+            return redirect(url_for('first_change_password'))
+        conn = None
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            nova_hash = bcrypt.generate_password_hash(nova_senha).decode('utf-8')
+            cursor.execute("UPDATE usuarios SET senha_hash = %s, must_change_password = FALSE WHERE id = %s",
+                           (nova_hash, session['user_id']))
+            conn.commit()
+            session.pop('must_change_password', None)
+            flash('Senha alterada com sucesso!', 'success')
+            return redirect(url_for('painel'))
+        except psycopg2.Error as e:
+            if conn: conn.rollback()
+            flash('Erro ao alterar a senha.', 'error')
+            print(f'Erro em /first_change_password: {e}')
+            return redirect(url_for('first_change_password'))
+        finally:
+            if conn:
+                cursor.close()
+                conn.close()
+
+    # GET -> render a view within painel.html (view='first_change_password')
+    nome_completo, foto_perfil_url = get_user_data()
+    return render_template('painel.html', nome_completo=nome_completo, foto_perfil_url=foto_perfil_url, view='first_change_password')
 
 
 @app.route('/get_questao/<int:questao_id>')
@@ -1042,8 +1253,82 @@ def export_questoes():
             conn.close()
 
 
+@app.route('/update_profile', methods=['POST'])
+@login_required
+def update_profile():
+    nome = request.form.get('nome')
+    sobrenome = request.form.get('sobrenome')
+    if not nome or not sobrenome:
+        flash("Nome e sobrenome são obrigatórios.", "error")
+        return redirect(url_for('configuracoes'))
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE usuarios SET nome = %s, sobrenome = %s WHERE id = %s",
+                       (nome, sobrenome, session['user_id']))
+        conn.commit()
+        session['user_nome'] = nome
+        session['user_sobrenome'] = sobrenome
+        flash("Perfil atualizado com sucesso!", "success")
+    except psycopg2.Error as e:
+        if conn: conn.rollback()
+        flash("Ocorreu um erro ao atualizar o seu perfil.", "error")
+        print(f"Erro em /update_profile: {e}")
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
+    return redirect(url_for('configuracoes'))
+
+
+@app.route('/change_password', methods=['POST'])
+@login_required
+def change_password():
+    senha_atual = request.form.get('senha_atual')
+    nova_senha = request.form.get('nova_senha')
+    confirmar_senha = request.form.get('confirmar_senha')
+
+    if not all([senha_atual, nova_senha, confirmar_senha]):
+        flash('Todos os campos são obrigatórios.', 'error')
+        return redirect(url_for('configuracoes'))
+
+    if nova_senha != confirmar_senha:
+        flash('As senhas novas não coincidem.', 'error')
+        return redirect(url_for('configuracoes'))
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Verificar a senha atual
+        cursor.execute("SELECT senha_hash FROM usuarios WHERE id = %s", (session['user_id'],))
+        user = cursor.fetchone()
+        if not user or not bcrypt.check_password_hash(user['senha_hash'], senha_atual):
+            flash('Senha atual está incorreta.', 'error')
+            return redirect(url_for('configuracoes'))
+
+        # Atualizar para a nova senha
+        nova_hash = bcrypt.generate_password_hash(nova_senha).decode('utf-8')
+        cursor.execute("UPDATE usuarios SET senha_hash = %s, must_change_password = FALSE WHERE id = %s",
+                       (nova_hash, session['user_id']))
+        conn.commit()
+
+        session.pop('must_change_password', None)  # Garantir que a sessão seja limpa
+        flash('Senha alterada com sucesso!', 'success')
+    except psycopg2.Error as e:
+        if conn: conn.rollback()
+        flash('Erro ao alterar a senha.', 'error')
+        print(f'Erro em /change_password: {e}')
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
+    return redirect(url_for('configuracoes'))
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 4000))
     app.run(host='0.0.0.0', port=port, debug=True)
 
-    
